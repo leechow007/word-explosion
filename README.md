@@ -122,3 +122,9 @@ word-explosion/
 - 数据与设置仅存于本机（`~/Library/Application Support/WordPop`），无网络、无追踪。
 - 图标与界面为原创设计，遵循 `DESIGN.md` 的玻璃拟态语言。
 - v0.1 为个人学习工具，未做公证签名，首次打开请右键 → 打开（或系统设置允许）。
+
+## 📄 License
+
+[MIT License](LICENSE) · Copyright (c) 2026 leechow007
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
