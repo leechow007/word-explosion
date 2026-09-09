@@ -1,0 +1,11 @@
+# 构建与缓存（源码仓库不提交）
+.build/
+.build-*/
+build/
+dist/
+.cache/
+.tmp/
+*.o
+
+# macOS
+.DS_Store

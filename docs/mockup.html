@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>词爆 WordPop · 高保真视觉稿</title>
+<style>
+  :root{
+    --indigo:#5E5CE6; --blue:#0A84FF; --cyan:#32ADE6; --mint:#30D158;
+    --teal:#40C8BE; --pink:#FF6482; --purple:#BF5AF2; --orange:#FF9F0A;
+    --ink:#1B1D29; --ink2:rgba(27,29,41,.62);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{
+    font-family:-apple-system, BlinkMacSystemFont, "PingFang SC", "SF Pro Text", sans-serif;
+    background:linear-gradient(180deg,#0d0e1a 0%,#171a2e 55%,#1d1a33 100%);
+    color:#f4f5fa; padding:40px 34px 80px;
+  }
+  .page{max-width:1280px;margin:0 auto}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em}
+  .sub{color:rgba(255,255,255,.55);font-size:13px;margin:8px 0 0;font-weight:400}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.06);border-radius:999px;padding:4px 12px;font-size:12px;color:rgba(255,255,255,.75);
+    margin:0 6px 0 0}
+  .headline{display:flex;align-items:center;gap:18px;margin-bottom:8px}
+  .logo{width:52px;height:52px;border-radius:13px;flex:0 0 auto;
+    background:linear-gradient(140deg,#6d6af6 0%,#9a5cf5 55%,#ff7a9e 100%);
+    box-shadow:0 10px 26px rgba(140,90,255,.45), inset 0 1px 0 rgba(255,255,255,.4);
+    display:flex;align-items:center;justify-content:center;position:relative}
+  .logo .pill{position:absolute;background:rgba(255,255,255,.92);border-radius:999px;display:flex;align-items:center;
+    justify-content:center;font-weight:700;color:#23252f;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+  .logo .p1{width:24px;height:12px;font-size:8px;top:11px;left:14px}
+  .logo .p2{width:28px;height:13px;font-size:9px;bottom:9px;right:10px;background:rgba(255,255,255,.6)}
+  .section-cap{margin:46px 0 14px;display:flex;align-items:center;gap:12px}
+  .section-cap .no{width:26px;height:26px;border-radius:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+  .section-cap h2{font-size:17px;font-weight:600}
+  .section-cap .hint{font-size:12px;color:rgba(255,255,255,.45)}
+
+  /* ===== 场景 1：悬浮词泡 ===== */
+  .stage{position:relative;border-radius:18px;overflow:hidden;height:640px;
+    background:
+      radial-gradient(1200px 500px at 80% -10%, rgba(94,92,230,.25), transparent 60%),
+      radial-gradient(900px 500px at -5% 110%, rgba(255,100,130,.16), transparent 60%),
+      linear-gradient(150deg,#8fa8d8 0%,#b7c6e6 22%,#e8e2f2 48%,#f7f1e8 72%,#cfe0ea 100%);
+    border:1px solid rgba(255,255,255,.22); box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .stage .wall {position:absolute;inset:0}
+  .appwin{position:absolute;left:6%;right:10%;top:9%;height:64%;border-radius:12px;
+    background:rgba(250,250,252,.82);backdrop-filter:blur(18px) saturate(1.2);
+    box-shadow:0 24px 60px rgba(40,45,80,.28), inset 0 0 0 .5px rgba(255,255,255,.7);border:1px solid rgba(30,35,60,.12);overflow:hidden}
+  .appwin .title{height:38px;display:flex;align-items:center;padding:0 14px;gap:8px;border-bottom:1px solid rgba(30,35,60,.08)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .appwin .body{padding:26px 30px}
+  .appwin .body .bar{height:8px;border-radius:6px;background:rgba(70,80,120,.16);margin-bottom:10px}
+  .appwin .body .bar.s{width:44%;background:rgba(94,92,230,.35)}
+  .appwin .body .line{font-size:12px;color:rgba(60,66,100,.5);line-height:1.8}
+
+  .bubble{position:absolute;border-radius:999px;display:flex;align-items:center;justify-content:center;
+    font-family:-apple-system, "SF Pro Rounded", system-ui;font-weight:600;letter-spacing:.01em;
+    animation:float 3.6s ease-in-out infinite}
+  .b1{left:6%;top:14%;font-size:24px;padding:16px 28px;
+    background:rgba(255,255,255,.55);backdrop-filter:blur(20px) saturate(1.5);
+    box-shadow:0 8px 24px rgba(40,50,110,.18), inset 0 0 0 1.5px rgba(255,255,255,.65), inset 0 0 0 4px rgba(94,92,230,.14), 0 0 22px rgba(94,92,230,.25)}
+  .b2{right:7%;top:36%;font-size:18px;padding:13px 22px;animation-delay:-1.1s;
+    background:rgba(255,255,255,.5);backdrop-filter:blur(18px);color:#23253a;
+    box-shadow:0 6px 18px rgba(40,50,110,.16), inset 0 0 0 1.5px rgba(255,255,255,.6), inset 0 0 0 4px rgba(255,100,130,.12)}
+  .b3{left:13%;top:64%;font-size:16px;padding:12px 20px;animation-delay:-2.2s;
+    background:rgba(20,24,40,.42);backdrop-filter:blur(18px);color:#fff;
+    box-shadow:0 6px 18px rgba(10,12,30,.25), inset 0 0 0 1px rgba(255,255,255,.22), inset 0 0 0 3px rgba(50,173,230,.16)}
+  .b4{right:24%;top:10%;font-size:15px;padding:11px 18px;animation-delay:-0.6s;
+    background:rgba(255,255,255,.5);color:#23253a;backdrop-filter:blur(16px);
+    box-shadow:0 5px 14px rgba(40,50,110,.15), inset 0 0 0 1.5px rgba(255,255,255,.65), inset 0 0 0 3.5px rgba(191,90,242,.13)}
+  .b5{left:34%;top:22%;font-size:20px;padding:14px 24px;animation-delay:-2.9s;
+    background:linear-gradient(140deg,rgba(94,92,230,.92),rgba(191,90,242,.92));color:#fff;
+    box-shadow:0 10px 26px rgba(120,80,235,.4), inset 0 0 0 1px rgba(255,255,255,.35)}
+  .b6{right:20%;top:66%;font-size:17px;padding:13px 21px;animation-delay:-1.7s;
+    background:rgba(255,255,255,.5);color:#23253a;backdrop-filter:blur(16px);
+    box-shadow:0 5px 14px rgba(40,50,110,.15), inset 0 0 0 1.5px rgba(255,255,255,.65), inset 0 0 0 3.5px rgba(255,159,10,.15)}
+  .b7{right:6%;top:84%;font-size:14px;padding:10px 16px;animation-delay:-0.3s;
+    background:rgba(20,24,40,.42);backdrop-filter:blur(16px);color:#fff;
+    box-shadow:0 5px 14px rgba(10,12,30,.25), inset 0 0 0 1px rgba(255,255,255,.2)}
+  .b1:hover,.b2:hover,.b3:hover,.b4:hover,.b5:hover,.b6:hover,.b7:hover{filter:brightness(1.04)}
+  @keyframes float{0%,100%{transform:translateY(-3px)}50%{transform:translateY(3px)}}
+
+  /* hover tip */
+  .tip{position:absolute;left:38%;top:2%;width:236px;border-radius:16px;padding:14px 16px 15px;
+    background:rgba(250,250,254,.8);backdrop-filter:blur(26px) saturate(1.6);
+    border:1px solid rgba(255,255,255,.75);box-shadow:0 14px 34px rgba(30,35,80,.28), 0 0 0 .5px rgba(30,35,80,.06);
+    animation:tipin .25s cubic-bezier(.22,1,.36,1)}
+  @keyframes tipin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .tip .trow{display:flex;align-items:center;justify-content:space-between}
+  .tip .word{font-size:20px;font-weight:600;color:#1B1D29}
+  .tip .spk{width:28px;height:28px;border-radius:50%;background:rgba(94,92,230,.12);color:#5E5CE6;
+    display:flex;align-items:center;justify-content:center;font-size:14px}
+  .tip .mean{margin-top:6px;font-size:13.5px;line-height:1.5;color:rgba(27,29,41,.72);font-weight:500}
+
+  .legend{position:absolute;left:20px;bottom:16px;font-size:11px;color:rgba(30,35,70,.55);display:flex;gap:16px;align-items:center;background:rgba(255,255,255,.5);padding:8px 14px;border-radius:999px;backdrop-filter:blur(12px)}
+  .legend b{color:rgba(30,35,70,.8)}
+
+  /* ===== 场景2：菜单栏 + 设置 ===== */
+  .duo{display:grid;grid-template-columns:300px 1fr;gap:26px;align-items:start}
+  .menubar-mock{border-radius:18px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);padding:18px;backdrop-filter:blur(10px)}
+  .menubar-mock h3{font-size:12px;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.08em;margin-bottom:12px;text-transform:uppercase}
+  .menuitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:13px;color:rgba(255,255,255,.88)}
+  .menuitem .grow{flex:1}
+  .menuitem .dim{color:rgba(255,255,255,.4);font-size:11.5px}
+  .menuitem.active{background:rgba(94,92,230,.35);box-shadow:inset 0 0 0 1px rgba(140,130,255,.4)}
+  .menuitem.hdr{font-weight:700;color:#fff;padding-top:2px}
+  .menuitem.hdr .dot{width:7px;height:7px;background:#30D158;box-shadow:0 0 8px #30D158}
+  .sep{height:1px;background:rgba(255,255,255,.12);margin:7px 4px}
+  .ic{width:16px;text-align:center;opacity:.85;font-size:12px}
+  .kbd{margin-left:auto;font-size:11px;color:rgba(255,255,255,.35)}
+  .statline{display:flex;align-items:center;gap:8px;margin:8px 2px 2px;font-size:12px;color:rgba(255,255,255,.5)}
+
+  .setwin{border-radius:18px;overflow:hidden;background:rgba(250,250,252,.97);color:#1B1D29;
+    box-shadow:0 34px 90px rgba(0,0,0,.5), 0 0 0 .5px rgba(255,255,255,.25);border:1px solid rgba(30,35,60,.1)}
+  .settitle{height:44px;display:flex;align-items:center;gap:7px;padding:0 16px;border-bottom:1px solid rgba(30,35,60,.08);background:rgba(255,255,255,.4)}
+  .settitle .t{font-size:13px;font-weight:600;color:#1B1D29;margin-left:8px}
+  .setbody{display:grid;grid-template-columns:196px 1fr;min-height:470px}
+  .nav{padding:14px 10px;border-right:1px solid rgba(30,35,60,.07);background:rgba(30,35,60,.025)}
+  .navitem{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:13px;color:rgba(27,29,41,.72);margin-bottom:2px}
+  .navitem.on{background:rgba(94,92,230,.12);color:#4441c8;font-weight:600}
+  .navitem .ic{opacity:.8}
+  .navfoot{margin-top:22px;font-size:11px;color:rgba(27,29,41,.35);padding:0 12px;line-height:1.6}
+  .content{padding:26px 30px}
+  .ctitle{font-size:20px;font-weight:700;letter-spacing:-.01em}
+  .cdesc{font-size:12.5px;color:rgba(27,29,41,.5);margin:5px 0 22px}
+  .formrow{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(30,35,60,.06)}
+  .formrow:last-of-type{border-bottom:none}
+  .lbl{font-size:13.5px;font-weight:600}
+  .hint{font-size:11.5px;color:rgba(27,29,41,.48);margin-top:2px}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:300px}
+  .pill-s{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid rgba(30,35,60,.15);color:rgba(27,29,41,.75);background:#fff}
+  .pill-s.on{background:#1B1D29;color:#fff;border-color:#1B1D29;font-weight:600}
+  .mini-num{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;color:#4441c8}
+  .switch{width:38px;height:22px;border-radius:999px;background:#30D158;position:relative;flex:0 0 auto}
+  .switch::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;padding:7px 16px;border-radius:9px;
+    background:#1B1D29;color:#fff;box-shadow:0 4px 12px rgba(27,29,41,.25)}
+  .slider{width:150px;height:4px;border-radius:2px;background:linear-gradient(90deg,#5E5CE6 62%,rgba(30,35,60,.14) 62%)}
+  .thumb{width:15px;height:15px;border-radius:50%;background:#fff;border:1px solid rgba(30,35,60,.2);box-shadow:0 1px 4px rgba(0,0,0,.2);margin-left:calc(62% - 7px);margin-top:-5.5px}
+  .center-row{display:flex;align-items:center;justify-content:center;gap:14px}
+  .wordtip{display:inline-block;border-radius:999px;background:#5E5CE6;padding:2px 12px;font-size:12px;color:#fff;box-shadow:0 2px 8px rgba(94,92,230,.5)}
+  .note{font-size:11px;color:rgba(27,29,41,.4);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="headline">
+    <div class="logo">
+      <div class="pill p1">Word</div>
+      <div class="pill p2">Pop</div>
+    </div>
+    <div>
+      <h1>词爆 WordPop · 高保真视觉稿</h1>
+      <p class="sub">macOS 菜单栏常驻 · hover 看释义 · 双击点爆 · 鼠标穿透不打扰 &nbsp;|&nbsp; 玻璃拟态 / 渐变辉光 / 弹簧动效</p>
+      <p style="margin-top:10px">
+        <span class="chip">● 晨雾 Glass</span><span class="chip">● 午夜 Glass</span><span class="chip">● 晚霞 Aurora</span><span class="chip">● 8 色强调色</span>
+      </p>
+    </div>
+  </div>
+
+  <div class="section-cap"><span class="no">01</span><h2>桌面悬浮场景（词泡 + hover 释义 + 双击点爆）</h2><span class="hint">词泡独立热区 · 空白处点击穿透到下方 App</span></div>
+  <div class="stage">
+    <div class="wall">
+      <div class="appwin">
+        <div class="title"><span class="dot" style="background:#FF5F57"></span><span class="dot" style="background:#FEBC2E"></span><span class="dot" style="background:#28C840"></span>
+          <span style="font-size:11px;color:rgba(40,45,80,.5);margin-left:8px">编辑器 – 工作区</span></div>
+        <div class="body">
+          <div class="bar s"></div><div class="bar" style="width:92%"></div><div class="bar" style="width:78%"></div><div class="bar" style="width:64%"></div><div class="bar" style="width:88%"></div>
+          <p class="line">func review() {&nbsp; <b style="color:rgba(94,92,230,.8)">双击</b> 弹起的单词即可点爆 → 每日碎片时间自动复习 … }</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="bubble b1">abundant</div>
+    <div class="bubble b2">resilient</div>
+    <div class="bubble b3">ambiguous</div>
+    <div class="bubble b4">meticulous</div>
+    <div class="bubble b5">serendipity</div>
+    <div class="bubble b6">profound</div>
+    <div class="bubble b7">candid</div>
+
+    <div class="tip">
+      <div class="trow"><span class="word">serendipity</span><span class="spk">🔊</span></div>
+      <div class="mean">n. 机缘巧合；意外发现珍宝的运气</div>
+    </div>
+
+    <div class="legend"><b>hover 0.25s → 释义卡</b><span>·</span><b>双击 → 粒子点爆 🎇</b><span>·</span><b>不理它 → 3 分钟后飘走</b></div>
+  </div>
+
+  <div class="section-cap" style="margin-top:56px"><span class="no">02</span><h2>菜单栏与设置窗口</h2><span class="hint">Accessory 模式：无 Dock 图标 · 中文界面 · 原生控件质感</span></div>
+  <div class="duo">
+    <div class="menubar-mock">
+      <h3>菜单栏下拉</h3>
+      <div class="menuitem hdr"><span class="ic">✦</span><span class="grow">词爆 WordPop</span><span class="dot"></span></div>
+      <div class="statline" style="margin-left:26px">距下一波 12:34 · 运行中</div>
+      <div class="sep"></div>
+      <div class="menuitem"><span class="ic">🫧</span><span class="grow">立即弹一波</span></div>
+      <div class="menuitem"><span class="ic">⏸</span><span class="grow">暂停弹出</span></div>
+      <div class="sep"></div>
+      <div class="menuitem"><span class="ic">✓</span><span class="grow">今日已点掉 <b>6</b> 个单词</span></div>
+      <div class="sep"></div>
+      <div class="menuitem active"><span class="ic">⚙️</span><span class="grow">设置…</span></div>
+      <div class="menuitem"><span class="ic">⎋</span><span class="grow">退出词爆</span><span class="kbd">⌘Q</span></div>
+    </div>
+
+    <div class="setwin">
+      <div class="settitle">
+        <span style="width:11px;height:11px;border-radius:50%;background:#FF5F57"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#FEBC2E"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#28C840"></span>
+        <span class="t">词爆设置</span>
+      </div>
+      <div class="setbody">
+        <div class="nav">
+          <div class="navitem on"><span class="ic">◉</span>通用</div>
+          <div class="navitem"><span class="ic">▤</span>词库 <span style="margin-left:auto;font-size:10px;background:#5E5CE6;color:#fff;border-radius:99px;padding:1px 7px">126</span></div>
+          <div class="navitem"><span class="ic">◐</span>外观</div>
+          <div class="navitem"><span class="ic">▥</span>统计</div>
+          <div class="navitem"><span class="ic">ⓘ</span>关于</div>
+          <div class="navfoot">词爆 WordPop v0.1<br>本地运行 · 无网络 · 无追踪</div>
+        </div>
+        <div class="content">
+          <div class="ctitle">通用</div>
+          <div class="cdesc">节奏由你定——弹出频率、每波数量与自动飘走时长。</div>
+
+          <div class="formrow">
+            <div><div class="lbl">弹出间隔</div><div class="hint">多久弹出一波新单词</div></div>
+            <div class="pills">
+              <span class="pill-s">5 分</span><span class="pill-s">10 分</span><span class="pill-s">15 分</span>
+              <span class="pill-s on">20 分</span><span class="pill-s">30 分</span><span class="pill-s">60 分</span>
+              <span class="pill-s">自定义 · 12 分</span>
+            </div>
+          </div>
+
+          <div class="formrow">
+            <div><div class="lbl">每波词数 <span class="mini-num">6</span></div><div class="hint">同时浮在屏幕上的单词数量</div></div>
+            <div style="width:190px"><div class="slider"></div><div class="thumb"></div></div>
+          </div>
+
+          <div class="formrow">
+            <div><div class="lbl">留存时长 <span class="mini-num">3 分钟</span></div><div class="hint">没点爆的单词多久后自动飘走</div></div>
+            <div style="width:190px"><div class="slider" style="background:linear-gradient(90deg,#5E5CE6 34%,rgba(30,35,60,.14) 34%)"></div><div class="thumb" style="margin-left:calc(34% - 7px)"></div></div>
+          </div>
+
+          <div class="formrow">
+            <div><div class="lbl">新一波遇到残留单词</div><div class="hint">默认先让旧词快速飘走，保持清爽</div></div>
+            <span class="pill-s on">先飘走再弹出</span>
+          </div>
+
+          <div class="formrow">
+            <div><div class="lbl">开机自动开始</div><div class="hint">登录后自动进入定时循环</div></div>
+            <span class="switch"></span>
+          </div>
+
+          <div style="margin-top:26px;display:flex;gap:10px;align-items:center">
+            <span class="btn">导入 TXT / CSV 词本</span>
+            <span class="note">每行一个单词，可加中文：<span class="wordtip">serendipity  机缘巧合</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin-top:52px;text-align:center;color:rgba(255,255,255,.35);font-size:12px">
+    词爆 WordPop · 高保真视觉稿 v0.1 — 正式视觉以原生 SwiftUI 实现为准（docs/mockup.html 可交互浏览）
+  </p>
+</div>
+</body>
+</html>
