@@ -127,31 +127,57 @@ struct BubbleCapsuleView: View {
     }
 }
 
-// MARK: - 外发光（独立鼠标穿透窗口内绘制，因此不会被裁切）
+// MARK: - 外发光（在 Canvas 图层内做模糊：既不裁切，也不会出现矩形边界）
+
+/// 发光淡入淡出状态（在 SwiftUI 内部做动画，避免对透明窗口做 NSWindow.alphaValue 动画）
+final class GlowFadeState: ObservableObject {
+    @Published var opacity: Double = 0
+}
 
 struct BubbleGlowView: View {
     let appearance: BubbleAppearance
+    let capsuleSize: CGSize
+    @ObservedObject var fade: GlowFadeState
 
-    var body: some View {
-        ZStack {
-            // 三层由紧到松的模糊，形成连续衰减的柔光，避免出现"糊团"与色带
-            glowLayer(blur: 10, opacity: 0.28, scale: 1.00)
-            glowLayer(blur: 26, opacity: 0.14, scale: 1.02)
-            glowLayer(blur: 46, opacity: 0.07, scale: 1.05)
-        }
-        .padding(WordMetrics.glowMargin)
-        .allowsHitTesting(false)
+    private struct Layer {
+        let blur: CGFloat
+        let expand: CGFloat
+        let opacity: Double
     }
 
-    private func glowLayer(blur: CGFloat, opacity: Double, scale: CGFloat) -> some View {
-        Capsule()
-            .fill(
-                LinearGradient(colors: [
-                    appearance.accent.opacity(opacity),
-                    AppPalette.partner(for: appearance.accentHex).opacity(opacity * 0.55)
-                ], startPoint: .topLeading, endPoint: .bottomTrailing)
-            )
-            .scaleEffect(scale)
-            .blur(radius: blur)
+    // 三层由紧到松的模糊：形成连续衰减的柔光
+    private let layers: [Layer] = [
+        Layer(blur: 10, expand: 0, opacity: 0.30),
+        Layer(blur: 26, expand: 3, opacity: 0.15),
+        Layer(blur: 46, expand: 7, opacity: 0.08)
+    ]
+
+    var body: some View {
+        Canvas { context, size in
+            let rect = CGRect(x: (size.width - capsuleSize.width) / 2,
+                              y: (size.height - capsuleSize.height) / 2,
+                              width: capsuleSize.width,
+                              height: capsuleSize.height)
+            let gradient = Gradient(colors: [
+                appearance.accent,
+                AppPalette.partner(for: appearance.accentHex)
+            ])
+
+            for layer in layers {
+                let expanded = rect.insetBy(dx: -layer.expand, dy: -layer.expand)
+                let path = Path(roundedRect: expanded, cornerRadius: expanded.height / 2)
+                context.drawLayer { inner in
+                    inner.addFilter(.blur(radius: layer.blur))
+                    inner.opacity = layer.opacity
+                    inner.fill(path, with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: expanded.minX, y: expanded.minY),
+                        endPoint: CGPoint(x: expanded.maxX, y: expanded.maxY)
+                    ))
+                }
+            }
+        }
+        .opacity(fade.opacity)
+        .allowsHitTesting(false)
     }
 }

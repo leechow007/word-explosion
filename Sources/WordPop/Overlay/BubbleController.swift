@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+// MARK: - 始终透明的宿主视图（防止 SwiftUI 宿主图层带上不透明底色）
+
+final class TransparentHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool { false }
+
+    override func layout() {
+        super.layout()
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.isOpaque = false
+    }
+}
+
 // MARK: - 单个词泡窗口控制器
 
 @MainActor
@@ -25,6 +38,9 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
     weak var engine: OverlayEngine?
 
+    private let glowFade = GlowFadeState()
+    /// 排查开关：WORDPOP_NO_GLOW=1 时不显示发光层
+    private let showsGlow = ProcessInfo.processInfo.environment["WORDPOP_NO_GLOW"] != "1"
     private var ttlTask: Task<Void, Never>?
     private var popped = false
 
@@ -71,35 +87,38 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
         glowPanel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue)
         glowPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         glowPanel.animationBehavior = .none
-        glowPanel.alphaValue = 0
         self.glowWindow = glowPanel
 
         super.init()
 
         let contentView = BubbleContentView(controller: self)
             .frame(width: windowFrame.width, height: windowFrame.height)
-        let hosting = NSHostingView(rootView: contentView)
+        let hosting = TransparentHostingView(rootView: contentView)
         hosting.frame = NSRect(origin: .zero, size: windowFrame.size)
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
-        let glowView = BubbleGlowView(appearance: appearance)
+        let glowView = BubbleGlowView(appearance: appearance,
+                                      capsuleSize: capsuleFrame.size,
+                                      fade: glowFade)
             .frame(width: glowFrame.width, height: glowFrame.height)
-        let glowHosting = NSHostingView(rootView: glowView)
+        let glowHosting = TransparentHostingView(rootView: glowView)
         glowHosting.frame = NSRect(origin: .zero, size: glowFrame.size)
         glowHosting.autoresizingMask = [.width, .height]
         glowPanel.contentView = glowHosting
+
+        glowPanel.alphaValue = 1   // 不使用窗口 alpha 动画（透明窗口做 alpha 动画会整块矩形显影）
     }
 
     func orderFront() {
-        glowWindow.orderFrontRegardless()
-        window.orderFrontRegardless()
-        // 发光与词泡同步淡入，避免"啪"地出现
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.5
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            glowWindow.animator().alphaValue = 1
+        if showsGlow {
+            glowWindow.orderFrontRegardless()
+            // 发光在 SwiftUI 内部淡入，与词泡入场同步
+            withAnimation(.easeOut(duration: 0.5)) {
+                glowFade.opacity = 1
+            }
         }
+        window.orderFrontRegardless()
         // 入场动画在 SwiftUI 中由 phase 驱动，这里延迟 0.6s 进入 idle 并开始计时
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 620_000_000)
@@ -145,10 +164,9 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
         let center = CGPoint(x: window.frame.midX, y: window.frame.midY)
         engine?.burstFX(at: center, appearance: appearance, anchorScreen: window.screen)
 
-        // 发光随点爆一起迅速淡出
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            glowWindow.animator().alphaValue = 0
+        // 发光随点爆一起迅速淡出（在 SwiftUI 内部动画）
+        withAnimation(.easeOut(duration: 0.12)) {
+            glowFade.opacity = 0
         }
 
         Task { [weak self] in
@@ -167,10 +185,8 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
         ttlTask?.cancel()
         phase = .drifting
         let seconds: Double = quick ? 0.4 : 0.72
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = seconds
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            glowWindow.animator().alphaValue = 0
+        withAnimation(.easeInOut(duration: seconds)) {
+            glowFade.opacity = 0
         }
         let delay = UInt64(seconds * 1_000_000_000) + 60_000_000
         Task { [weak self] in

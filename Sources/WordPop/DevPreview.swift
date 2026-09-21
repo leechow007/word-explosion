@@ -128,6 +128,12 @@ private struct BubbleScenePreview: View {
     let words: [String]
     let wallColors: [Color]
 
+    private let previewFade: GlowFadeState = {
+        let state = GlowFadeState()
+        state.opacity = 1
+        return state
+    }()
+
     var body: some View {
         ZStack {
             LinearGradient(colors: wallColors, startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -141,7 +147,7 @@ private struct BubbleScenePreview: View {
                 let dy = CGFloat(index) * 62 - 62
 
                 ZStack {
-                    BubbleGlowView(appearance: appearance)
+                    BubbleGlowView(appearance: appearance, capsuleSize: capsule, fade: previewFade)
                         .frame(width: glowSize.width, height: glowSize.height)
                     BubbleCapsuleView(appearance: appearance, text: word)
                         .frame(width: bubbleSize.width, height: bubbleSize.height)
