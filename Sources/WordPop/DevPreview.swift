@@ -73,8 +73,11 @@ enum DevPreview {
         guard let screen = NSScreen.main else { return false }
 
         let outURL = URL(fileURLWithPath: path)
-        let appearance = BubbleAppearance.from(settings: AppState.shared.settings)
-        let word = ProcessInfo.processInfo.environment["WORDPOP_CAPTURE_WORD"] ?? "indecent"
+        var appearance = BubbleAppearance.from(settings: AppState.shared.settings)
+        let env = ProcessInfo.processInfo.environment
+        if let bg = env["WORDPOP_CAPTURE_BG"] { appearance.backgroundHex = bg }
+        if let op = env["WORDPOP_CAPTURE_OPACITY"], let value = Double(op) { appearance.fillOpacity = value }
+        let word = env["WORDPOP_CAPTURE_WORD"] ?? "indecent"
         let size = WordMetrics.windowSize(word: word, appearance: appearance)
         let frame = NSRect(x: screen.frame.midX - size.width / 2,
                            y: screen.frame.midY - size.height / 2,
@@ -128,9 +131,11 @@ private struct BubbleScenePreview: View {
     let words: [String]
     let wallColors: [Color]
 
-    private let previewFade: GlowFadeState = {
-        let state = GlowFadeState()
-        state.opacity = 1
+    private let previewMotion: BubbleMotionState = {
+        let state = BubbleMotionState()
+        state.glowOpacity = 1
+        state.capsuleScale = 1
+        state.appeared = true
         return state
     }()
 
@@ -147,7 +152,7 @@ private struct BubbleScenePreview: View {
                 let dy = CGFloat(index) * 62 - 62
 
                 ZStack {
-                    BubbleGlowView(appearance: appearance, capsuleSize: capsule, fade: previewFade)
+                    BubbleGlowView(appearance: appearance, capsuleSize: capsule, motion: previewMotion)
                         .frame(width: glowSize.width, height: glowSize.height)
                     BubbleCapsuleView(appearance: appearance, text: word)
                         .frame(width: bubbleSize.width, height: bubbleSize.height)

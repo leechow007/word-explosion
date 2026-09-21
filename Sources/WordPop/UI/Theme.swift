@@ -14,6 +14,27 @@ extension Color {
         let b = Double(value & 0xFF) / 255.0
         self.init(red: r, green: g, blue: b)
     }
+
+    /// 转回 #RRGGBB，便于持久化
+    var hexString: String {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? NSColor.white
+        return String(format: "#%02X%02X%02X",
+                      Int(round(ns.redComponent * 255)),
+                      Int(round(ns.greenComponent * 255)),
+                      Int(round(ns.blueComponent * 255)))
+    }
+
+    /// 相对亮度（用于自动选择可读的文字颜色）
+    var relativeLuminance: Double {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? NSColor.white
+        func channel(_ v: CGFloat) -> Double {
+            let x = Double(v)
+            return x <= 0.03928 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(ns.redComponent)
+            + 0.7152 * channel(ns.greenComponent)
+            + 0.0722 * channel(ns.blueComponent)
+    }
 }
 
 // MARK: - Palette
@@ -55,6 +76,8 @@ struct BubbleAppearance: Equatable {
     var accent: Color
     var fontSize: CGFloat
     var serif: Bool
+    var backgroundHex: String = "#FFFFFF"
+    var fillOpacity: Double = 0.55
 
     static func from(settings: AppSettings) -> BubbleAppearance {
         BubbleAppearance(
@@ -62,9 +85,13 @@ struct BubbleAppearance: Equatable {
             accentHex: settings.accentHex,
             accent: AppPalette.accent(settings.accentHex),
             fontSize: CGFloat(settings.fontSize.rawValue),
-            serif: settings.serifFont
+            serif: settings.serifFont,
+            backgroundHex: settings.bubbleBackgroundHex,
+            fillOpacity: settings.bubbleFillOpacity
         )
     }
+
+    var background: Color { Color(hex: backgroundHex) }
 
     var font: Font {
         if serif {
@@ -73,11 +100,15 @@ struct BubbleAppearance: Equatable {
         return .system(size: fontSize, weight: .semibold, design: .rounded)
     }
 
+    /// 依据背景与不透明度自动选择可读的文字颜色（用户自定义深色底时也能看清）
     var textColor: Color {
         switch theme {
-        case .glassLight: return AppPalette.ink.opacity(0.92)
-        case .glassDark: return Color.white.opacity(0.95)
-        case .aurora: return .white
+        case .aurora:
+            return .white
+        case .glassDark:
+            return background.relativeLuminance > 0.6 ? AppPalette.ink.opacity(0.92) : .white.opacity(0.95)
+        case .glassLight:
+            return background.relativeLuminance > 0.45 ? AppPalette.ink.opacity(0.92) : .white.opacity(0.95)
         }
     }
 

@@ -7,6 +7,9 @@ import AVFoundation
 @MainActor
 final class MeaningTipController {
 
+    /// 窗口四周留给投影的余量（否则投影会被窗口边界裁成方板）
+    static let tipMargin: CGFloat = 44
+
     private let window: NSPanel
     private var speaker: WordSpeaker?
 
@@ -30,21 +33,26 @@ final class MeaningTipController {
     }
 
     func show(entry: WordEntry, appearance: BubbleAppearance, anchorFrame: CGRect, screen: NSScreen?) {
-        let size = Self.tipSize(entry: entry)
+        let card = Self.tipSize(entry: entry)
+        let margin = Self.tipMargin
+        let windowSize = CGSize(width: card.width + margin * 2, height: card.height + margin * 2)
         let screenFrame = (screen ?? NSScreen.main)?.visibleFrame ?? anchorFrame
 
-        var x = anchorFrame.minX
-        var bottom: CGFloat
-
-        // 优先放在词泡下方；空间不足则放上方
-        if anchorFrame.minY - 12 - size.height >= screenFrame.minY {
-            bottom = anchorFrame.minY - 12 - size.height
+        // 卡片自身的位置（左下原点），窗口再按 margin 外扩，保证投影不被裁切
+        var cardX = anchorFrame.minX
+        var cardBottom: CGFloat
+        if anchorFrame.minY - 12 - card.height >= screenFrame.minY {
+            cardBottom = anchorFrame.minY - 12 - card.height
         } else {
-            bottom = min(anchorFrame.maxY + 12, screenFrame.maxY - size.height)
+            cardBottom = min(anchorFrame.maxY + 12, screenFrame.maxY - card.height)
         }
-        x = max(screenFrame.minX + 4, min(x, screenFrame.maxX - size.width - 4))
+        cardX = max(screenFrame.minX + 4, min(cardX, screenFrame.maxX - card.width - 4))
 
-        window.setFrame(NSRect(x: x, y: bottom, width: size.width, height: size.height), display: false)
+        window.setFrame(NSRect(x: cardX - margin,
+                               y: cardBottom - margin,
+                               width: windowSize.width,
+                               height: windowSize.height),
+                        display: false)
 
         let speaker = WordSpeaker()
         self.speaker = speaker
@@ -52,10 +60,11 @@ final class MeaningTipController {
         let content = MeaningTipView(entry: entry,
                                      accent: appearance.accent,
                                      speaker: speaker,
-                                     width: size.width)
-            .frame(width: size.width, height: size.height)
-        let hosting = NSHostingView(rootView: content)
-        hosting.frame = NSRect(x: 0, y: 0, width: size.width, height: size.height)
+                                     width: card.width)
+            .frame(width: card.width, height: card.height)
+            .padding(margin)
+        let hosting = TransparentHostingView(rootView: content)
+        hosting.frame = NSRect(origin: .zero, size: windowSize)
         window.contentView = hosting
         window.orderFrontRegardless()
     }
@@ -65,6 +74,7 @@ final class MeaningTipController {
         speaker = nil
     }
 
+    /// 卡片本体尺寸（不含投影余量）
     static func tipSize(entry: WordEntry) -> CGSize {
         let width: CGFloat = 236
         let hPad: CGFloat = 16

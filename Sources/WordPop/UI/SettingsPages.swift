@@ -365,6 +365,27 @@ struct LibraryPage: View {
 struct AppearancePage: View {
     @EnvironmentObject private var app: AppState
 
+    private var accentColorBinding: Binding<Color> {
+        Binding(
+            get: { AppPalette.accent(app.settings.accentHex) },
+            set: { app.settings.accentHex = $0.hexString }
+        )
+    }
+
+    private var backgroundBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: app.settings.bubbleBackgroundHex) },
+            set: { app.settings.bubbleBackgroundHex = $0.hexString }
+        )
+    }
+
+    private var currentAccentName: String {
+        if let preset = AppPalette.accentOptions.first(where: { $0.hex.caseInsensitiveCompare(app.settings.accentHex) == .orderedSame }) {
+            return preset.name
+        }
+        return "自定义"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -407,11 +428,52 @@ struct AppearancePage: View {
                             .help(option.name)
                         }
                         Spacer()
-                        Text("当前：\(AppPalette.accentOptions.first { $0.hex == app.settings.accentHex }?.name ?? "")")
+                        VStack(spacing: 2) {
+                            ColorPicker("", selection: accentColorBinding, supportsOpacity: false)
+                                .labelsHidden()
+                                .frame(width: 42)
+                            Text("自定义")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(currentAccentName)
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+                            .frame(minWidth: 62, alignment: .leading)
                     }
                     .padding(.vertical, 11)
+                }
+
+                SectionCaption(text: "词泡背景")
+                SettingsCard {
+                    SettingRow(title: "背景颜色", hint: "可任选颜色，文字会自动转为黑或白以保证可读") {
+                        HStack(spacing: 12) {
+                            ColorPicker("", selection: backgroundBinding, supportsOpacity: false)
+                                .labelsHidden()
+                                .frame(width: 42)
+                            Text(app.settings.bubbleBackgroundHex.uppercased())
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: 76, alignment: .leading)
+                            Button("恢复默认") {
+                                app.settings.bubbleBackgroundHex = "#FFFFFF"
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                    Divider()
+                    SettingRow(title: "背景不透明度", hint: "越低越通透；越高越清晰、越不干扰阅读") {
+                        HStack(spacing: 14) {
+                            Text("\(Int((app.settings.bubbleFillOpacity * 100).rounded()))%")
+                                .font(.system(size: 15, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundStyle(AppPalette.accent(app.settings.accentHex))
+                                .frame(minWidth: 52, alignment: .trailing)
+                            Slider(value: $app.settings.bubbleFillOpacity, in: 0.10 ... 1.0)
+                                .frame(width: 190)
+                        }
+                    }
                 }
 
                 SectionCaption(text: "词泡文字")
@@ -538,40 +600,11 @@ struct LiveBubblePreview: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color(nsColor: .textBackgroundColor).opacity(0.4))
 
-                ZStack {
-                    switch appearance.theme {
-                    case .glassLight:
-                        Capsule().fill(
-                            LinearGradient(stops: [
-                                .init(color: .white.opacity(0.72), location: 0.00),
-                                .init(color: .white.opacity(0.55), location: 1.00)
-                            ], startPoint: .top, endPoint: .bottom)
-                        )
-                    case .glassDark:
-                        Capsule().fill(LinearGradient(colors: [.black.opacity(0.48), .black.opacity(0.32)],
-                                                      startPoint: .top, endPoint: .bottom))
-                    case .aurora:
-                        Capsule().fill(LinearGradient(colors: [appearance.accent.opacity(0.94),
-                                                               AppPalette.partner(for: appearance.accentHex)],
-                                                      startPoint: .topLeading, endPoint: .bottomTrailing))
-                    }
-                    Capsule().strokeBorder(
-                        LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.12)],
-                                       startPoint: .top, endPoint: .bottom), lineWidth: 1)
-                    Capsule().strokeBorder(
-                        LinearGradient(colors: [appearance.accent.opacity(0.45), appearance.accent.opacity(0.12)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.3)
-                    Text("serendipity")
-                        .font(appearance.font)
-                        .foregroundStyle(appearance.textColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .padding(.horizontal, 26)
-                        .padding(.vertical, 13)
-                }
-                .shadow(color: appearance.accent.opacity(appearance.glowOpacity), radius: 14, y: 5)
+                // 直接复用真实词泡组件，所见即所得（含自定义背景色与不透明度）
+                BubbleCapsuleView(appearance: appearance, text: "serendipity")
+                    .scaleEffect(1.02)
             }
-            .frame(maxWidth: .infinity, minHeight: 116)
+            .frame(maxWidth: .infinity, minHeight: 132)
         }
     }
 }

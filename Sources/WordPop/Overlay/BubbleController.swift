@@ -38,7 +38,8 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
     weak var engine: OverlayEngine?
 
-    private let glowFade = GlowFadeState()
+    /// 词泡与发光共享的运动状态（浮动/缩放完全同步）
+    let motion = BubbleMotionState()
     /// 排查开关：WORDPOP_NO_GLOW=1 时不显示发光层
     private let showsGlow = ProcessInfo.processInfo.environment["WORDPOP_NO_GLOW"] != "1"
     private var ttlTask: Task<Void, Never>?
@@ -91,7 +92,7 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
         super.init()
 
-        let contentView = BubbleContentView(controller: self)
+        let contentView = BubbleContentView(controller: self, motion: motion)
             .frame(width: windowFrame.width, height: windowFrame.height)
         let hosting = TransparentHostingView(rootView: contentView)
         hosting.frame = NSRect(origin: .zero, size: windowFrame.size)
@@ -100,7 +101,7 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
         let glowView = BubbleGlowView(appearance: appearance,
                                       capsuleSize: capsuleFrame.size,
-                                      fade: glowFade)
+                                      motion: motion)
             .frame(width: glowFrame.width, height: glowFrame.height)
         let glowHosting = TransparentHostingView(rootView: glowView)
         glowHosting.frame = NSRect(origin: .zero, size: glowFrame.size)
@@ -113,12 +114,23 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
     func orderFront() {
         if showsGlow {
             glowWindow.orderFrontRegardless()
-            // 发光在 SwiftUI 内部淡入，与词泡入场同步
             withAnimation(.easeOut(duration: 0.5)) {
-                glowFade.opacity = 1
+                motion.glowOpacity = 1
             }
         }
         window.orderFrontRegardless()
+
+        // 词泡与发光共用同一套动画：入场弹簧 + 轻微浮动
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.68)) {
+            motion.appeared = true
+            motion.capsuleScale = 1
+        }
+        let amplitude: CGFloat = appearance.fontSize * 0.08   // 幅度克制，避免与柔光产生视觉错位
+        let duration = Double.random(in: 3.0 ... 4.6)
+        withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
+            motion.bobOffset = amplitude
+        }
+
         // 入场动画在 SwiftUI 中由 phase 驱动，这里延迟 0.6s 进入 idle 并开始计时
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 620_000_000)
@@ -145,6 +157,9 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
             return
         }
         hovered = on
+        withAnimation(.easeOut(duration: on ? 0.14 : 0.2)) {
+            motion.capsuleScale = on ? 1.04 : 1.0
+        }
         engine?.scheduleMeaningTip(for: self, show: on)
     }
 
@@ -165,8 +180,9 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
         engine?.burstFX(at: center, appearance: appearance, anchorScreen: window.screen)
 
         // 发光随点爆一起迅速淡出（在 SwiftUI 内部动画）
-        withAnimation(.easeOut(duration: 0.12)) {
-            glowFade.opacity = 0
+        withAnimation(.easeOut(duration: 0.10)) {
+            motion.glowOpacity = 0
+            motion.capsuleScale = 1.18
         }
 
         Task { [weak self] in
@@ -186,7 +202,10 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
         phase = .drifting
         let seconds: Double = quick ? 0.4 : 0.72
         withAnimation(.easeInOut(duration: seconds)) {
-            glowFade.opacity = 0
+            motion.glowOpacity = 0
+            motion.appeared = false
+            motion.capsuleScale = 0.9
+            motion.bobOffset = -52   // 与词泡同步上飘，避免柔光与词泡错位
         }
         let delay = UInt64(seconds * 1_000_000_000) + 60_000_000
         Task { [weak self] in
@@ -260,10 +279,7 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
 struct BubbleContentView: View {
     @ObservedObject var controller: BubbleController
-
-    @State private var appeared = false
-    @State private var bobOffset: CGFloat = 0
-    @State private var hoverScale: CGFloat = 1
+    @ObservedObject var motion: BubbleMotionState
 
     var body: some View {
         ZStack {
@@ -272,38 +288,16 @@ struct BubbleContentView: View {
                               flash: isBursting ? 0.85 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .scaleEffect(scale)
-        .opacity(opacity)
+        .scaleEffect(motion.capsuleScale)
+        .opacity(motion.appeared ? 1 : 0)
         .offset(x: 0, y: yOffset)
-        .onAppear {
-            guard !appeared else { return }
-            appeared = true
-            let amplitude: CGFloat = controller.appearance.fontSize * 0.16
-            let duration = Double.random(in: 2.8 ... 4.4)
-            withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
-                bobOffset = amplitude
-            }
-        }
-        .onChange(of: controller.phase) { _, newPhase in
-            if newPhase == .drifting {
-                withAnimation(.easeInOut(duration: 0.72)) { appeared = false }
-                withAnimation(.easeOut(duration: 0.25)) { bobOffset = 0 }
-            }
-        }
         .onHover { hovering in
             controller.setHover(hovering)
-            if hovering {
-                withAnimation(.easeOut(duration: 0.14)) { hoverScale = 1.04 }
-            } else {
-                withAnimation(.easeOut(duration: 0.2)) { hoverScale = 1 }
-            }
         }
         .onTapGesture(count: 2) {
             controller.pop()
         }
-        .animation(.spring(response: 0.45, dampingFraction: 0.68), value: appeared)
         .animation(.easeOut(duration: 0.09), value: isBursting)
-        .animation(.easeInOut(duration: 0.72), value: isDrifting)
     }
 
     // MARK: Visual states
@@ -311,19 +305,7 @@ struct BubbleContentView: View {
     private var isBursting: Bool { controller.phase == .bursting }
     private var isDrifting: Bool { controller.phase == .drifting }
 
-    private var scale: CGFloat {
-        if isDrifting { return 0.9 }
-        if !appeared { return 0.55 }
-        return hoverScale * (isBursting ? 1.18 : 1.0)
-    }
-
-    private var opacity: Double {
-        if isDrifting { return 0 }
-        return appeared ? 1 : 0
-    }
-
     private var yOffset: CGFloat {
-        if isDrifting { return -52 }
-        return bobOffset
+        motion.bobOffset
     }
 }

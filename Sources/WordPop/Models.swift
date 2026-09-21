@@ -96,9 +96,34 @@ struct AppSettings: Codable, Equatable {
     var accentHex: String = "#5E5CE6"
     var fontSize: BubbleFontSize = .medium
     var serifFont: Bool = false
+    var bubbleBackgroundHex: String = "#FFFFFF"
+    var bubbleFillOpacity: Double = 0.55
 
     var intervalSeconds: TimeInterval { TimeInterval(intervalMinutes * 60) }
     var ttlSeconds: TimeInterval { TimeInterval(ttlMinutes * 60) }
+
+    init() {}
+
+    /// 兼容旧版本配置：缺失字段自动使用默认值，避免升级后设置被重置
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = AppSettings()
+        intervalMinutes = try c.decodeIfPresent(Int.self, forKey: .intervalMinutes) ?? d.intervalMinutes
+        wordsPerWave = try c.decodeIfPresent(Int.self, forKey: .wordsPerWave) ?? d.wordsPerWave
+        ttlMinutes = try c.decodeIfPresent(Int.self, forKey: .ttlMinutes) ?? d.ttlMinutes
+        clearRemainderBeforeNewWave = try c.decodeIfPresent(Bool.self, forKey: .clearRemainderBeforeNewWave) ?? d.clearRemainderBeforeNewWave
+        maxOnScreen = try c.decodeIfPresent(Int.self, forKey: .maxOnScreen) ?? d.maxOnScreen
+        autoStartOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .autoStartOnLaunch) ?? d.autoStartOnLaunch
+        hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? d.hapticsEnabled
+        speakOnHover = try c.decodeIfPresent(Bool.self, forKey: .speakOnHover) ?? d.speakOnHover
+        source = try c.decodeIfPresent(WordSource.self, forKey: .source) ?? d.source
+        theme = try c.decodeIfPresent(BubbleTheme.self, forKey: .theme) ?? d.theme
+        accentHex = try c.decodeIfPresent(String.self, forKey: .accentHex) ?? d.accentHex
+        fontSize = try c.decodeIfPresent(BubbleFontSize.self, forKey: .fontSize) ?? d.fontSize
+        serifFont = try c.decodeIfPresent(Bool.self, forKey: .serifFont) ?? d.serifFont
+        bubbleBackgroundHex = try c.decodeIfPresent(String.self, forKey: .bubbleBackgroundHex) ?? d.bubbleBackgroundHex
+        bubbleFillOpacity = try c.decodeIfPresent(Double.self, forKey: .bubbleFillOpacity) ?? d.bubbleFillOpacity
+    }
 }
 
 // MARK: - Statistics

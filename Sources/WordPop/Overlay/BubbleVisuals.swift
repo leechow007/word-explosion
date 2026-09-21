@@ -1,27 +1,27 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 词泡胶囊视觉（发光单独放在 BubbleGlowView）
+// MARK: - 词泡运动状态（词泡窗口与发光窗口共享，保证任何时刻都严丝合缝对齐）
+
+final class BubbleMotionState: ObservableObject {
+    @Published var bobOffset: CGFloat = 0        // 上下浮动
+    @Published var capsuleScale: CGFloat = 0.55  // 入场/悬停/点爆的综合缩放
+    @Published var appeared = false              // 词泡本体不透明度
+    @Published var glowOpacity: Double = 0       // 发光不透明度
+}
+
+// MARK: - 词泡胶囊视觉
 
 struct BubbleCapsuleView: View {
     let appearance: BubbleAppearance
     let text: String
     var flash: Double = 0          // 点爆瞬间的白色闪光 0...1
-    var showShadow: Bool = true
 
     @Environment(\.colorScheme) private var colorScheme
 
     /// 晨雾主题在系统深色模式下自动切换为深色玻璃，保证文字对比度
     private var theme: BubbleTheme {
         appearance.theme == .glassLight && colorScheme == .dark ? .glassDark : appearance.theme
-    }
-
-    private var textColor: Color {
-        switch theme {
-        case .glassLight: return AppPalette.ink.opacity(0.92)
-        case .glassDark: return .white.opacity(0.95)
-        case .aurora: return .white
-        }
     }
 
     var body: some View {
@@ -43,40 +43,58 @@ struct BubbleCapsuleView: View {
                 .fill(.white.opacity(flash))
                 .allowsHitTesting(false)
         )
-        .shadow(color: .black.opacity(showShadow ? 0.16 : 0), radius: 6, x: 0, y: 3)
         .padding(WordMetrics.bubbleMargin(fontSize: appearance.fontSize))
     }
 
-    // MARK: 基础填充
+    private var textColor: Color {
+        switch theme {
+        case .glassLight:
+            return appearance.background.relativeLuminance > 0.45 ? AppPalette.ink.opacity(0.92) : .white.opacity(0.95)
+        case .glassDark:
+            return appearance.background.relativeLuminance > 0.6 ? AppPalette.ink.opacity(0.92) : .white.opacity(0.95)
+        case .aurora:
+            return .white
+        }
+    }
+
+    private var fillOpacity: Double {
+        min(max(appearance.fillOpacity, 0.05), 1.0)
+    }
+
+    // MARK: 基础填充（用户可自定义背景色与不透明度）
 
     @ViewBuilder
     private var fill: some View {
         switch theme {
         case .glassLight:
             // 不使用 .ultraThinMaterial：系统毛玻璃的模糊区域是矩形，圆角裁不掉，
-            // 会在胶囊外露出一层方形底噪。这里用半透明白渐变，结构上杜绝该问题。
+            // 会在胶囊外露出一层方形底噪。这里用可控的渐变半透明填充。
             Capsule().fill(
                 LinearGradient(stops: [
-                    .init(color: .white.opacity(0.62), location: 0.00),
-                    .init(color: .white.opacity(0.52), location: 0.45),
-                    .init(color: .white.opacity(0.44), location: 1.00)
+                    .init(color: appearance.background.opacity(min(1, fillOpacity * 1.12)), location: 0.00),
+                    .init(color: appearance.background.opacity(min(1, fillOpacity * 0.95)), location: 0.48),
+                    .init(color: appearance.background.opacity(min(1, fillOpacity * 0.82)), location: 1.00)
                 ], startPoint: .top, endPoint: .bottom)
             )
         case .glassDark:
-            Capsule().fill(
-                LinearGradient(colors: [.black.opacity(0.44), .black.opacity(0.30)],
-                               startPoint: .top, endPoint: .bottom)
-            )
+            ZStack {
+                Capsule().fill(
+                    LinearGradient(colors: [.black.opacity(0.40), .black.opacity(0.28)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                Capsule().fill(appearance.background.opacity(min(1, fillOpacity * 0.45)))
+            }
         case .aurora:
             Capsule().fill(
-                LinearGradient(colors: [appearance.accent.opacity(0.94),
-                                        AppPalette.partner(for: appearance.accentHex)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                LinearGradient(colors: [
+                    appearance.accent.opacity(min(1, fillOpacity + 0.35)),
+                    AppPalette.partner(for: appearance.accentHex).opacity(min(1, fillOpacity + 0.25))
+                ], startPoint: .topLeading, endPoint: .bottomTrailing)
             )
         }
     }
 
-    /// 多段柔和渐变：让上高光→中间过渡→底部微暗，避免两段式生硬断层
+    /// 多段柔和渐变：上高光 → 中间过渡 → 底部微暗，避免两段式生硬断层
     @ViewBuilder
     private var tintOverlay: some View {
         switch theme {
@@ -127,29 +145,23 @@ struct BubbleCapsuleView: View {
     }
 }
 
-// MARK: - 外发光（在 Canvas 图层内做模糊：既不裁切，也不会出现矩形边界）
-
-/// 发光淡入淡出状态（在 SwiftUI 内部做动画，避免对透明窗口做 NSWindow.alphaValue 动画）
-final class GlowFadeState: ObservableObject {
-    @Published var opacity: Double = 0
-}
+// MARK: - 柔光层（投影 + 外发光，全部在 Canvas 的整窗图层内模糊，永不裁切）
 
 struct BubbleGlowView: View {
     let appearance: BubbleAppearance
     let capsuleSize: CGSize
-    @ObservedObject var fade: GlowFadeState
+    @ObservedObject var motion: BubbleMotionState
 
-    private struct Layer {
+    private struct Halo {
         let blur: CGFloat
         let expand: CGFloat
         let opacity: Double
     }
 
-    // 三层由紧到松的模糊：形成连续衰减的柔光
-    private let layers: [Layer] = [
-        Layer(blur: 10, expand: 0, opacity: 0.30),
-        Layer(blur: 26, expand: 3, opacity: 0.15),
-        Layer(blur: 46, expand: 7, opacity: 0.08)
+    private let halos: [Halo] = [
+        Halo(blur: 10, expand: 0, opacity: 0.30),
+        Halo(blur: 26, expand: 3, opacity: 0.15),
+        Halo(blur: 46, expand: 7, opacity: 0.08)
     ]
 
     var body: some View {
@@ -158,17 +170,27 @@ struct BubbleGlowView: View {
                               y: (size.height - capsuleSize.height) / 2,
                               width: capsuleSize.width,
                               height: capsuleSize.height)
+
+            // 1) 投影（放在这里绘制，避免在词泡小窗口里被裁成矩形）
+            let shadowRect = rect.offsetBy(dx: 0, dy: 3)
+            context.drawLayer { inner in
+                inner.addFilter(.blur(radius: 9))
+                inner.opacity = 0.20
+                inner.fill(Path(roundedRect: shadowRect, cornerRadius: shadowRect.height / 2),
+                           with: .color(.black))
+            }
+
+            // 2) 彩色柔光：三层由紧到松，形成连续衰减
             let gradient = Gradient(colors: [
                 appearance.accent,
                 AppPalette.partner(for: appearance.accentHex)
             ])
-
-            for layer in layers {
-                let expanded = rect.insetBy(dx: -layer.expand, dy: -layer.expand)
+            for halo in halos {
+                let expanded = rect.insetBy(dx: -halo.expand, dy: -halo.expand)
                 let path = Path(roundedRect: expanded, cornerRadius: expanded.height / 2)
                 context.drawLayer { inner in
-                    inner.addFilter(.blur(radius: layer.blur))
-                    inner.opacity = layer.opacity
+                    inner.addFilter(.blur(radius: halo.blur))
+                    inner.opacity = halo.opacity
                     inner.fill(path, with: .linearGradient(
                         gradient,
                         startPoint: CGPoint(x: expanded.minX, y: expanded.minY),
@@ -177,7 +199,10 @@ struct BubbleGlowView: View {
                 }
             }
         }
-        .opacity(fade.opacity)
+        // 与词泡共享同一套运动状态，任何时刻都对齐
+        .scaleEffect(motion.capsuleScale)
+        .offset(y: motion.bobOffset)
+        .opacity(motion.glowOpacity)
         .allowsHitTesting(false)
     }
 }
