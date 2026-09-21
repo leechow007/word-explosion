@@ -10,6 +10,7 @@ final class OverlayEngine {
     private var meaningTip: MeaningTipController?
     private var burstFXs: [BurstFXController] = []
     private var pendingTip: (bubble: BubbleController, task: Task<Void, Never>)?
+    private var pendingTipHide: Task<Void, Never>?
     private var recentPopped: [String] = []
 
     var onBubblePopped: ((WordEntry) -> Void)?
@@ -196,10 +197,19 @@ final class OverlayEngine {
     func scheduleMeaningTip(for bubble: BubbleController, show: Bool) {
         pendingTip?.task.cancel()
         pendingTip = nil
+
         guard show else {
-            hideMeaningTip()
+            // 光标可能正停在释义卡上（用户想去点小喇叭）→ 保持显示
+            if meaningTip?.isHovered == true { return }
+            // 给光标从词泡移动到卡片的时间（两者之间有间隙）
+            scheduleTipHide(after: 0.38)
             return
         }
+
+        // 要显示时取消待执行的隐藏
+        pendingTipHide?.cancel()
+        pendingTipHide = nil
+
         let task = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 260_000_000)
             guard let self, !Task.isCancelled else { return }
@@ -210,9 +220,33 @@ final class OverlayEngine {
         pendingTip = (bubble, task)
     }
 
+    /// 释义卡自身 hover 状态变化
+    func tipHoverChanged(_ hovering: Bool) {
+        if hovering {
+            pendingTipHide?.cancel()
+            pendingTipHide = nil
+        } else {
+            scheduleTipHide(after: 0.25)
+        }
+    }
+
+    private func scheduleTipHide(after seconds: Double) {
+        pendingTipHide?.cancel()
+        pendingTipHide = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            if self.meaningTip?.isHovered == true { return }
+            self.hideMeaningTip()
+        }
+    }
+
     private func showMeaningTip(for bubble: BubbleController) {
         if meaningTip == nil {
-            meaningTip = MeaningTipController()
+            let tip = MeaningTipController()
+            tip.onHoverChange = { [weak self] hovering in
+                self?.tipHoverChanged(hovering)
+            }
+            meaningTip = tip
         }
         meaningTip?.show(entry: bubble.entry,
                          appearance: bubble.appearance,
@@ -221,6 +255,8 @@ final class OverlayEngine {
     }
 
     func hideMeaningTip() {
+        pendingTipHide?.cancel()
+        pendingTipHide = nil
         meaningTip?.hide()
     }
 

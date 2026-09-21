@@ -2,43 +2,53 @@ import AppKit
 import SwiftUI
 import AVFoundation
 
-// MARK: - hover 释义卡（共享单窗口）
+// MARK: - hover 释义卡（投影窗口 + 卡片窗口分离：投影不挡点击，卡片本体可交互）
 
 @MainActor
 final class MeaningTipController {
 
-    /// 窗口四周留给投影的余量（否则投影会被窗口边界裁成方板）
+    /// 投影窗口相对卡片的余量（越大投影越完整，但窗口本身鼠标穿透，不影响点击）
     static let tipMargin: CGFloat = 44
 
-    private let window: NSPanel
+    private let cardWindow: NSPanel
+    private let shadowWindow: NSPanel
     private var speaker: WordSpeaker?
 
+    /// 光标是否停在卡片上（由卡片视图上报，用于"够得到小喇叭"）
+    var onHoverChange: ((Bool) -> Void)?
+    private(set) var isHovered = false
+
     init() {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 240, height: 90),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        cardWindow = Self.makePanel(interactive: true)
+        shadowWindow = Self.makePanel(interactive: false)
+    }
+
+    private static func makePanel(interactive: Bool) -> NSPanel {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 240, height: 100),
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 3)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.ignoresMouseEvents = false
+        panel.ignoresMouseEvents = !interactive
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
-        window = panel
+        panel.acceptsMouseMovedEvents = interactive   // 让卡片能收到 hover 事件
+        panel.animationBehavior = .none
+        return panel
     }
 
     func show(entry: WordEntry, appearance: BubbleAppearance, anchorFrame: CGRect, screen: NSScreen?) {
         let card = Self.tipSize(entry: entry)
         let margin = Self.tipMargin
-        let windowSize = CGSize(width: card.width + margin * 2, height: card.height + margin * 2)
         let screenFrame = (screen ?? NSScreen.main)?.visibleFrame ?? anchorFrame
 
-        // 卡片自身的位置（左下原点），窗口再按 margin 外扩，保证投影不被裁切
+        // 卡片位置（左下原点）：优先放在词泡下方，空间不足则放上方
         var cardX = anchorFrame.minX
         var cardBottom: CGFloat
         if anchorFrame.minY - 12 - card.height >= screenFrame.minY {
@@ -48,29 +58,47 @@ final class MeaningTipController {
         }
         cardX = max(screenFrame.minX + 4, min(cardX, screenFrame.maxX - card.width - 4))
 
-        window.setFrame(NSRect(x: cardX - margin,
-                               y: cardBottom - margin,
-                               width: windowSize.width,
-                               height: windowSize.height),
-                        display: false)
+        // 卡片窗口：精确等于卡片大小（不留隐形拦点击区域）
+        cardWindow.setFrame(NSRect(x: cardX, y: cardBottom, width: card.width, height: card.height), display: false)
+        // 投影窗口：外扩 margin，鼠标完全穿透
+        shadowWindow.setFrame(NSRect(x: cardX - margin, y: cardBottom - margin,
+                                     width: card.width + margin * 2,
+                                     height: card.height + margin * 2),
+                              display: false)
 
         let speaker = WordSpeaker()
         self.speaker = speaker
 
-        let content = MeaningTipView(entry: entry,
-                                     accent: appearance.accent,
-                                     speaker: speaker,
-                                     width: card.width)
+        let cardContent = MeaningTipView(entry: entry,
+                                         accent: appearance.accent,
+                                         speaker: speaker,
+                                         width: card.width)
             .frame(width: card.width, height: card.height)
-            .padding(margin)
-        let hosting = TransparentHostingView(rootView: content)
-        hosting.frame = NSRect(origin: .zero, size: windowSize)
-        window.contentView = hosting
-        window.orderFrontRegardless()
+            .onHover { [weak self] hovering in
+                guard let self else { return }
+                self.isHovered = hovering
+                self.onHoverChange?(hovering)
+            }
+        let cardHosting = TransparentHostingView(rootView: cardContent)
+        cardHosting.frame = NSRect(origin: .zero, size: card)
+        cardWindow.contentView = cardHosting
+
+        let shadowContent = TipShadowView(cardSize: card)
+            .frame(width: card.width + margin * 2, height: card.height + margin * 2)
+        let shadowHosting = TransparentHostingView(rootView: shadowContent)
+        shadowHosting.frame = NSRect(origin: .zero,
+                                     size: CGSize(width: card.width + margin * 2,
+                                                  height: card.height + margin * 2))
+        shadowWindow.contentView = shadowHosting
+
+        shadowWindow.orderFrontRegardless()
+        cardWindow.orderFrontRegardless()
     }
 
     func hide() {
-        window.orderOut(nil)
+        isHovered = false
+        cardWindow.orderOut(nil)
+        shadowWindow.orderOut(nil)
         speaker = nil
     }
 
@@ -98,6 +126,22 @@ final class MeaningTipController {
     }
 }
 
+// MARK: - 投影（独立穿透窗口，避免被卡片窗口裁成方板）
+
+private struct TipShadowView: View {
+    let cardSize: CGSize
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .fill(Color.black.opacity(0.22))
+            .frame(width: cardSize.width, height: cardSize.height)
+            .blur(radius: 16)
+            .offset(y: 8)
+            .padding(MeaningTipController.tipMargin)
+            .allowsHitTesting(false)
+    }
+}
+
 // MARK: - 释义卡内容
 
 struct MeaningTipView: View {
@@ -108,9 +152,9 @@ struct MeaningTipView: View {
 
     var body: some View {
         ZStack {
-            // 同样避免 .ultraThinMaterial 的矩形底噪，使用自适应半透明底 + 渐变高光
+            // 避免 .ultraThinMaterial 的矩形底噪，使用自适应半透明底 + 渐变高光
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.94))
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .fill(
                     LinearGradient(stops: [
@@ -154,9 +198,10 @@ struct MeaningTipView: View {
             .padding(.top, 15)
             .padding(.bottom, 13)
         }
-        .shadow(color: .black.opacity(0.22), radius: 16, x: 0, y: 8)
         .frame(width: width)
+        .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .allowsHitTesting(true)
+        .help("点击 🔊 发音（双击词泡可点爆）")
     }
 
     @ViewBuilder
@@ -170,7 +215,8 @@ struct MeaningTipView: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(accent)
             }
-            .frame(width: 26, height: 26)
+            .frame(width: 30, height: 30)          // 加大可点区域，便于命中
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .scaleEffect(speaker.isSpeaking ? 1.08 : 1)
