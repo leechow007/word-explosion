@@ -43,6 +43,12 @@ struct MenuBarRootView: View {
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
 
+            if app.settings.spacedRepetitionEnabled, markStore.dueCount() > 0 {
+                Text("待复习 \(markStore.dueCount()) 个（已到期）")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+
             if app.undoAvailable, let description = app.undoDescription {
                 Button {
                     app.undoLastMark()

@@ -159,6 +159,32 @@ struct GeneralPage: View {
                     .padding(.vertical, 12)
                 }
 
+                SectionCaption(text: "记忆曲线")
+                SettingsCard {
+                    Toggle(isOn: $app.settings.spacedRepetitionEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("按遗忘曲线安排复现")
+                                .font(.system(size: 13.5, weight: .semibold))
+                            Text("记得 → 1/2/4/7/15/30 天后再出现；不认识 → 回炉重学")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(.vertical, 12)
+
+                    Divider()
+
+                    SettingRow(title: "生词回炉间隔", hint: "标记为生词后多久重新出现") {
+                        Stepper(value: $app.settings.unknownReturnMinutes, in: 5 ... 60, step: 5) {
+                            Text("\(app.settings.unknownReturnMinutes) 分钟")
+                                .font(.system(size: 14, weight: .semibold))
+                                .monospacedDigit()
+                                .frame(minWidth: 62, alignment: .trailing)
+                        }
+                    }
+                }
+
                 SettingsCard {
                     SettingRow(title: "生词加频倍数", hint: "生词出现概率相对普通词的倍数") {
                         HStack(spacing: 14) {
@@ -853,6 +879,22 @@ struct MarksPage: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 8)
+
+            // 记忆曲线：阶段 + 到期时间
+            if mark.state == .unknown || mark.state == .known {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("阶段 \(mark.level) · \(ReviewSchedule.levelTitle(mark.level))")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(ReviewSchedule.dueText(mark.dueAt))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle((mark.dueAt ?? .distantFuture) <= Date()
+                                         ? AppPalette.accent("#30D158")
+                                         : Color.secondary)
+                }
+                .frame(minWidth: 108, alignment: .trailing)
+            }
+
             Text(mark.state.title)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(stateTint(mark.state))
@@ -940,6 +982,44 @@ struct StatsPage: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(.tertiary)
 
+                SectionCaption(text: "记忆曲线")
+                HStack(spacing: 12) {
+                    statCard(value: "\(markStore.dueCount())",
+                             label: "待复习（已到期）", symbol: "clock.badge.checkmark",
+                             tint: AppPalette.accent(app.settings.accentHex))
+                    statCard(value: accuracyText, label: "复习正确率",
+                             symbol: "target", tint: AppPalette.accent("#30D158"))
+                    statCard(value: nextDueText, label: "下一次到期",
+                             symbol: "calendar.badge.clock", tint: AppPalette.accent("#32ADE6"))
+                }
+
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("记忆阶段分布（越靠右记得越牢）")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        HStack(alignment: .bottom, spacing: 10) {
+                            ForEach(Array(levelDistribution.enumerated()), id: \.offset) { index, count in
+                                VStack(spacing: 5) {
+                                    Text("\(count)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(count > 0 ? .primary : .tertiary)
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(AppPalette.accent(app.settings.accentHex).opacity(count > 0 ? 0.75 : 0.12))
+                                        .frame(width: 26, height: max(6, CGFloat(count) * 6 + 6))
+                                    Text(ReviewSchedule.levelTitle(index))
+                                        .font(.system(size: 9.5))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 4)
+                    }
+                    .padding(.vertical, 10)
+                }
+
                 SectionCaption(text: "近 7 日点掉趋势")
                 SettingsCard {
                     chart
@@ -952,8 +1032,24 @@ struct StatsPage: View {
         }
     }
 
-    private func statCard(value: String, label: String, symbol: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    // MARK: 记忆曲线派生数据
+
+    private var accuracyText: String {
+        let acc = markStore.accuracy()
+        guard let rate = acc.rate else { return "—" }
+        return "\(Int((rate * 100).rounded()))%"
+    }
+
+    private var nextDueText: String {
+        guard let next = markStore.nextDueAt() else { return "—" }
+        return ReviewSchedule.dueText(next)
+    }
+
+    private var levelDistribution: [Int] {
+        markStore.levelDistribution()
+    }
+
+    private func statCard(value: String, label: String, symbol: String, tint: Color) -> some View {        VStack(alignment: .leading, spacing: 8) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)

@@ -107,6 +107,10 @@ struct AppSettings: Codable, Equatable {
     var knownReviveDays: Int = 7                // 「认识」词多少天后权重回升
     var prioritizeUnknown: Bool = true          // 每波优先带 1 个生词
 
+    // 记忆曲线（v0.3）
+    var spacedRepetitionEnabled: Bool = true    // 按遗忘曲线安排复现
+    var unknownReturnMinutes: Int = 10          // 生词多久后回炉
+
     var intervalSeconds: TimeInterval { TimeInterval(intervalMinutes * 60) }
     var ttlSeconds: TimeInterval { TimeInterval(ttlMinutes * 60) }
 
@@ -137,6 +141,8 @@ struct AppSettings: Codable, Equatable {
         knownWeight = try c.decodeIfPresent(Double.self, forKey: .knownWeight) ?? d.knownWeight
         knownReviveDays = try c.decodeIfPresent(Int.self, forKey: .knownReviveDays) ?? d.knownReviveDays
         prioritizeUnknown = try c.decodeIfPresent(Bool.self, forKey: .prioritizeUnknown) ?? d.prioritizeUnknown
+        spacedRepetitionEnabled = try c.decodeIfPresent(Bool.self, forKey: .spacedRepetitionEnabled) ?? d.spacedRepetitionEnabled
+        unknownReturnMinutes = try c.decodeIfPresent(Int.self, forKey: .unknownReturnMinutes) ?? d.unknownReturnMinutes
     }
 }
 
