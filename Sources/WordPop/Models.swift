@@ -99,6 +99,14 @@ struct AppSettings: Codable, Equatable {
     var bubbleBackgroundHex: String = "#FFFFFF"
     var bubbleFillOpacity: Double = 0.55
 
+    // 学习（标记体系）
+    var doubleClickMarksKnown: Bool = true      // 双击视为「认识」
+    var modifierMarksEnabled: Bool = true       // 启用 ⌥/⇧ 双击标记
+    var unknownWeightMultiplier: Double = 3.0   // 生词加频倍数 1–5
+    var knownWeight: Double = 0.25              // 「认识」词复现权重 0.1–1.0
+    var knownReviveDays: Int = 7                // 「认识」词多少天后权重回升
+    var prioritizeUnknown: Bool = true          // 每波优先带 1 个生词
+
     var intervalSeconds: TimeInterval { TimeInterval(intervalMinutes * 60) }
     var ttlSeconds: TimeInterval { TimeInterval(ttlMinutes * 60) }
 
@@ -123,6 +131,12 @@ struct AppSettings: Codable, Equatable {
         serifFont = try c.decodeIfPresent(Bool.self, forKey: .serifFont) ?? d.serifFont
         bubbleBackgroundHex = try c.decodeIfPresent(String.self, forKey: .bubbleBackgroundHex) ?? d.bubbleBackgroundHex
         bubbleFillOpacity = try c.decodeIfPresent(Double.self, forKey: .bubbleFillOpacity) ?? d.bubbleFillOpacity
+        doubleClickMarksKnown = try c.decodeIfPresent(Bool.self, forKey: .doubleClickMarksKnown) ?? d.doubleClickMarksKnown
+        modifierMarksEnabled = try c.decodeIfPresent(Bool.self, forKey: .modifierMarksEnabled) ?? d.modifierMarksEnabled
+        unknownWeightMultiplier = try c.decodeIfPresent(Double.self, forKey: .unknownWeightMultiplier) ?? d.unknownWeightMultiplier
+        knownWeight = try c.decodeIfPresent(Double.self, forKey: .knownWeight) ?? d.knownWeight
+        knownReviveDays = try c.decodeIfPresent(Int.self, forKey: .knownReviveDays) ?? d.knownReviveDays
+        prioritizeUnknown = try c.decodeIfPresent(Bool.self, forKey: .prioritizeUnknown) ?? d.prioritizeUnknown
     }
 }
 

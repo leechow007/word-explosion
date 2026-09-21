@@ -116,6 +116,84 @@ struct GeneralPage: View {
                     .padding(.vertical, 12)
                 }
 
+                SectionCaption(text: "学习（标记体系）")
+                SettingsCard {
+                    Toggle(isOn: $app.settings.doubleClickMarksKnown) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("双击视为「认识」")
+                                .font(.system(size: 13.5, weight: .semibold))
+                            Text("关闭后双击只清屏，不改变词的标记状态")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(.vertical, 12)
+
+                    Divider()
+
+                    Toggle(isOn: $app.settings.modifierMarksEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("启用 ⌥ / ⇧ 双击标记")
+                                .font(.system(size: 13.5, weight: .semibold))
+                            Text("⌥ + 双击 = 生词；⇧ + 双击 = 已掌握")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(.vertical, 12)
+
+                    Divider()
+
+                    Toggle(isOn: $app.settings.prioritizeUnknown) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("每波优先带 1 个生词")
+                                .font(.system(size: 13.5, weight: .semibold))
+                            Text("只要还有生词，每一波都会包含至少一个（遵守冷却）")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(.vertical, 12)
+                }
+
+                SettingsCard {
+                    SettingRow(title: "生词加频倍数", hint: "生词出现概率相对普通词的倍数") {
+                        HStack(spacing: 14) {
+                            Text(String(format: "%.1f×", app.settings.unknownWeightMultiplier))
+                                .font(.system(size: 15, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundStyle(AppPalette.accent(app.settings.accentHex))
+                                .frame(minWidth: 56, alignment: .trailing)
+                            Slider(value: $app.settings.unknownWeightMultiplier, in: 1 ... 5, step: 0.5)
+                                .frame(width: 170)
+                        }
+                    }
+                    Divider()
+                    SettingRow(title: "「认识」词复现权重", hint: "越低越少出现（0.1 = 很少见）") {
+                        HStack(spacing: 14) {
+                            Text(String(format: "%.2f", app.settings.knownWeight))
+                                .font(.system(size: 15, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundStyle(AppPalette.accent(app.settings.accentHex))
+                                .frame(minWidth: 56, alignment: .trailing)
+                            Slider(value: $app.settings.knownWeight, in: 0.1 ... 1.0, step: 0.05)
+                                .frame(width: 170)
+                        }
+                    }
+                    Divider()
+                    SettingRow(title: "「认识」词权重回升", hint: "多少天未出现后恢复到普通权重") {
+                        Stepper(value: $app.settings.knownReviveDays, in: 1 ... 60) {
+                            Text("\(app.settings.knownReviveDays) 天")
+                                .font(.system(size: 14, weight: .semibold))
+                                .monospacedDigit()
+                                .frame(minWidth: 46, alignment: .trailing)
+                        }
+                    }
+                }
+
                 HStack(spacing: 12) {
                     Button {
                         app.fireNow()
@@ -609,10 +687,224 @@ struct LiveBubblePreview: View {
     }
 }
 
+// MARK: - 标记管理页
+
+struct MarksPage: View {
+    @EnvironmentObject private var app: AppState
+    @ObservedObject private var store = WordMarkStore.shared
+
+    @State private var filter: Filter = .unknown
+    @State private var search = ""
+    @State private var confirmRestoreAll = false
+
+    enum Filter: String, CaseIterable, Identifiable {
+        case unknown, mastered, all
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .unknown: return "生词"
+            case .mastered: return "已掌握"
+            case .all: return "全部已标记"
+            }
+        }
+    }
+
+    private var meaningLookup: [String: String] {
+        Dictionary(WordPool.entries(for: app.settings.source).map { ($0.word.lowercased(), $0.meaning) },
+                   uniquingKeysWith: { first, _ in first })
+    }
+
+    private var rows: [WordMark] {
+        let list = store.marks.values.filter { mark in
+            switch filter {
+            case .unknown: return mark.state == .unknown
+            case .mastered: return mark.state == .mastered
+            case .all: return mark.state != .unmarked
+            }
+        }
+        let keyword = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let filtered = keyword.isEmpty
+            ? list
+            : list.filter { $0.word.lowercased().contains(keyword) }
+        return filtered.sorted { $0.word.lowercased() < $1.word.lowercased() }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                PageHeader(title: "标记", subtitle: "你标记过的词都在这里，可随时改回或批量恢复。")
+
+                HStack(spacing: 12) {
+                    markStatCard(value: store.count(of: .unknown), label: "生词",
+                                 hint: "出现概率 ×\(String(format: "%.1f", app.settings.unknownWeightMultiplier))",
+                                 tint: AppPalette.accent(app.settings.accentHex), symbol: "questionmark.circle.fill")
+                    markStatCard(value: store.count(of: .mastered), label: "已掌握",
+                                 hint: "不再弹出", tint: AppPalette.accent("#30D158"), symbol: "star.circle.fill")
+                    markStatCard(value: store.count(of: .known), label: "认识",
+                                 hint: "低权重复习", tint: AppPalette.accent("#FF9F0A"), symbol: "checkmark.circle.fill")
+                }
+
+                HStack(spacing: 10) {
+                    Picker("", selection: $filter) {
+                        ForEach(Filter.allCases) { item in
+                            Text(item.title).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 320)
+
+                    TextField("搜索单词", text: $search)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 180)
+
+                    Spacer()
+
+                    if store.count(of: .mastered) > 0 {
+                        Button("恢复全部已掌握") {
+                            confirmRestoreAll = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+
+                if rows.isEmpty {
+                    SettingsCard {
+                        HStack(spacing: 10) {
+                            Image(systemName: "tag")
+                                .foregroundStyle(.secondary)
+                            Text(emptyHint)
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 12)
+                    }
+                } else {
+                    SettingsCard {
+                        LazyVStack(spacing: 0) {
+                            ForEach(rows, id: \.word) { mark in
+                                markRow(mark)
+                                if mark.word != rows.last?.word { Divider() }
+                            }
+                        }
+                    }
+                }
+
+                Text("提示：双击词泡 = 认识；⌥ + 双击 = 生词；⇧ + 双击 = 已掌握。标记与词库解耦，换词库不会丢。")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: 560, alignment: .leading)
+            .padding(.horizontal, 34)
+            .padding(.vertical, 26)
+        }
+        .confirmationDialog("恢复全部已掌握的词？", isPresented: $confirmRestoreAll, titleVisibility: .visible) {
+            Button("恢复 \(store.count(of: .mastered)) 个词", role: .destructive) {
+                store.restoreAllMastered()
+                app.statsRevision += 1
+            }
+        } message: {
+            Text("这些词会回到「未标记」状态，重新参与随机弹出。")
+        }
+    }
+
+    private var emptyHint: String {
+        switch filter {
+        case .unknown: return "还没有生词标记。用 ⌥ + 双击词泡，或 hover 卡片点「不认识」即可标记。"
+        case .mastered: return "还没有已掌握的词。用 ⇧ + 双击，或 hover 卡片点「已掌握」。"
+        case .all: return search.isEmpty ? "还没有任何标记。" : "没有匹配「\(search)」的标记。"
+        }
+    }
+
+    private func markStatCard(value: Int, label: String, hint: String, tint: Color, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+            Text("\(value)")
+                .font(.system(size: 24, weight: .bold))
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium))
+            Text(hint)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                }
+        }
+    }
+
+    private func markRow(_ mark: WordMark) -> some View {
+        HStack(spacing: 12) {
+            Text(mark.word)
+                .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                .frame(minWidth: 110, alignment: .leading)
+            Text(meaningLookup[mark.word.lowercased()] ?? "—")
+                .font(.system(size: 12.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(mark.state.title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(stateTint(mark.state))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background {
+                    Capsule().fill(stateTint(mark.state).opacity(0.12))
+                }
+
+            // 快速改状态
+            ForEach(WordMarkState.userStates, id: \.rawValue) { state in
+                if state != mark.state {
+                    Button {
+                        app.applyMark(mark.word, as: state)
+                    } label: {
+                        Text(state.title)
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("改为「\(state.title)」")
+                }
+            }
+
+            Button {
+                store.clearMark(mark.word)
+                app.statsRevision += 1
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("取消标记")
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func stateTint(_ state: WordMarkState) -> Color {
+        switch state {
+        case .unknown: return AppPalette.accent(app.settings.accentHex)
+        case .known: return AppPalette.accent("#FF9F0A")
+        case .mastered: return AppPalette.accent("#30D158")
+        case .unmarked: return .secondary
+        }
+    }
+}
+
 // MARK: - 统计页
 
 struct StatsPage: View {
     @EnvironmentObject private var app: AppState
+    @ObservedObject private var markStore = WordMarkStore.shared
 
     var body: some View {
         ScrollView {
@@ -630,6 +922,23 @@ struct StatsPage: View {
                              label: "弹出波次", symbol: "sparkles",
                              tint: AppPalette.accent("#BF5AF2"))
                 }
+
+                SectionCaption(text: "学习标记")
+                HStack(spacing: 12) {
+                    statCard(value: "\(markStore.count(of: .unknown))",
+                             label: "生词（多发）", symbol: "questionmark.circle.fill",
+                             tint: AppPalette.accent("#FF9F0A"))
+                    statCard(value: "\(markStore.count(of: .mastered))",
+                             label: "已掌握（不发）", symbol: "star.circle.fill",
+                             tint: AppPalette.accent("#30D158"))
+                    statCard(value: "\(markStore.count(of: .known))",
+                             label: "认识（少发）", symbol: "checkmark.circle.fill",
+                             tint: AppPalette.accent("#32ADE6"))
+                }
+
+                Text("标记与词库解耦：换词库、重新导入都不会丢失。已掌握的词不参与弹出，因此不计入上面的点掉统计。")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.tertiary)
 
                 SectionCaption(text: "近 7 日点掉趋势")
                 SettingsCard {

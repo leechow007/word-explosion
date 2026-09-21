@@ -43,14 +43,28 @@ struct MenuBarRootView: View {
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
 
+            if app.undoAvailable, let description = app.undoDescription {
+                Button {
+                    app.undoLastMark()
+                } label: {
+                    Label("撤销：\(description)", systemImage: "arrow.uturn.backward")
+                }
+            }
+
             if markStore.count(of: .mastered) > 0 {
                 Button {
                     let n = markStore.restoreAllMastered()
                     app.statsRevision += 1
                     print("[WordPop] 已恢复 \(n) 个「已掌握」的词")
                 } label: {
-                    Label("恢复全部已掌握的词", systemImage: "arrow.uturn.backward")
+                    Label("恢复全部已掌握的词", systemImage: "arrow.uturn.backward.circle")
                 }
+            }
+        } else if app.undoAvailable, let description = app.undoDescription {
+            Button {
+                app.undoLastMark()
+            } label: {
+                Label("撤销：\(description)", systemImage: "arrow.uturn.backward")
             }
         }
 

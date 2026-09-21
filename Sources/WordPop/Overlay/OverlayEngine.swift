@@ -8,18 +8,22 @@ final class OverlayEngine {
 
     private(set) var bubbles: [BubbleController] = []
     private var meaningTip: MeaningTipController?
+    private weak var tipBubble: BubbleController?
     private var burstFXs: [BurstFXController] = []
     private var markToast: MarkToastController?
     private var pendingTip: (bubble: BubbleController, task: Task<Void, Never>)?
     private var pendingTipHide: Task<Void, Never>?
     private var recentPopped: [String] = []
 
-    /// 词泡被点爆：回传单词与本次的标记意图
-    var onBubblePopped: ((WordEntry, WordMarkState) -> Void)?
+    /// 词泡被点爆：回传单词与本次的标记意图（nil = 不改标记状态，仅清屏）
+    var onBubblePopped: ((WordEntry, WordMarkState?) -> Void)?
     var onWaveStarted: ((Int) -> Void)?
     /// 本波实际出现在屏幕上的单词（用于 seen 计数）
     var onWordsSpawned: (([String]) -> Void)?
     var hapticsEnabled: Bool = true
+    /// 标记相关设置（由 AppState 同步）
+    var doubleClickMarksKnown = true
+    var modifierMarksEnabled = true
 
     // MARK: Wave launch
 
@@ -181,7 +185,7 @@ final class OverlayEngine {
 
     // MARK: Bubble removal
 
-    func remove(_ bubble: BubbleController, counted: Bool, intent: WordMarkState = .known) {
+    func remove(_ bubble: BubbleController, counted: Bool, intent: WordMarkState? = nil) {
         bubbles.removeAll { $0 === bubble }
         bubble.hide()
         if counted {
@@ -189,8 +193,8 @@ final class OverlayEngine {
             if recentPopped.count > 30 { recentPopped.removeFirst(recentPopped.count - 30) }
             onBubblePopped?(bubble.entry, intent)
             // 「认识」是默认行为，不打扰；另外两种意图给一次轻量反馈
-            if intent != .known {
-                showMarkToast(for: bubble, intent: intent)
+            if intent == .unknown || intent == .mastered {
+                showMarkToast(for: bubble, intent: intent!)
             }
         }
         if pendingTip?.bubble === bubble {
@@ -278,15 +282,21 @@ final class OverlayEngine {
             }
             meaningTip = tip
         }
+        tipBubble = bubble
         meaningTip?.show(entry: bubble.entry,
                          appearance: bubble.appearance,
                          anchorFrame: bubble.windowFrame,
-                         screen: bubble.window.screen ?? NSScreen.main)
+                         screen: bubble.window.screen ?? NSScreen.main,
+                         onMark: { [weak self] state in
+                             // 卡片按钮标记：按指定意图点爆该词泡
+                             self?.tipBubble?.pop(with: state)
+                         })
     }
 
     func hideMeaningTip() {
         pendingTipHide?.cancel()
         pendingTipHide = nil
+        tipBubble = nil
         meaningTip?.hide()
     }
 

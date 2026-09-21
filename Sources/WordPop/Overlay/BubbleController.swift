@@ -175,19 +175,24 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
     // MARK: 双击点爆
 
-    /// 本次点爆的标记意图：⌥ = 生词，⇧ = 已掌握，无修饰键 = 认识
-    var currentIntent: WordMarkState {
+    /// 本次点爆的标记意图：⌥ = 生词，⇧ = 已掌握，无修饰键 = 认识（可在设置中关闭）
+    var currentIntent: WordMarkState? {
         var flags = lastClickModifiers
         if flags.isEmpty { flags = NSEvent.modifierFlags }   // 兜底：读当前修饰键
-        if flags.contains(.shift) { return .mastered }
-        if flags.contains(.option) { return .unknown }
-        return .known
+        let modifiersOn = engine?.modifierMarksEnabled ?? true
+        if modifiersOn, flags.contains(.shift) { return .mastered }
+        if modifiersOn, flags.contains(.option) { return .unknown }
+        return (engine?.doubleClickMarksKnown ?? true) ? .known : nil
     }
 
     func pop() {
+        pop(with: currentIntent)
+    }
+
+    /// 指定标记意图点爆（释义卡上的按钮走这条路径）
+    func pop(with intent: WordMarkState?) {
         guard !popped, phase == .idle || phase == .entering else { return }
         popped = true
-        let intent = currentIntent
         ttlTask?.cancel()
         engine?.scheduleMeaningTip(for: self, show: false)
         phase = .bursting

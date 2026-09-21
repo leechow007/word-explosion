@@ -43,7 +43,11 @@ final class MeaningTipController {
         return panel
     }
 
-    func show(entry: WordEntry, appearance: BubbleAppearance, anchorFrame: CGRect, screen: NSScreen?) {
+    func show(entry: WordEntry,
+              appearance: BubbleAppearance,
+              anchorFrame: CGRect,
+              screen: NSScreen?,
+              onMark: @escaping (WordMarkState) -> Void) {
         let card = Self.tipSize(entry: entry)
         let margin = Self.tipMargin
         let screenFrame = (screen ?? NSScreen.main)?.visibleFrame ?? anchorFrame
@@ -72,7 +76,8 @@ final class MeaningTipController {
         let cardContent = MeaningTipView(entry: entry,
                                          accent: appearance.accent,
                                          speaker: speaker,
-                                         width: card.width)
+                                         width: card.width,
+                                         onMark: onMark)
             .frame(width: card.width, height: card.height)
             .onHover { [weak self] hovering in
                 guard let self else { return }
@@ -121,7 +126,8 @@ final class MeaningTipController {
             )
             textH = max(20, min(rect.height, 94))   // 最多约 5 行，兼顾长释义（如雅思词条）
         }
-        let height = ceil(16 + wordH + 8 + textH + 14)
+        // 底部标记按钮行：26pt 按钮 + 间距
+        let height = ceil(16 + wordH + 8 + textH + 10 + 26 + 12)
         return CGSize(width: width, height: height)
     }
 }
@@ -149,6 +155,8 @@ struct MeaningTipView: View {
     let accent: Color
     @ObservedObject var speaker: WordSpeaker
     let width: CGFloat
+    let onMark: (WordMarkState) -> Void
+    @State private var hoveredMark: WordMarkState?
 
     var body: some View {
         ZStack {
@@ -193,10 +201,11 @@ struct MeaningTipView: View {
                     .lineLimit(5)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                markRow
             }
             .padding(.horizontal, 16)
             .padding(.top, 15)
-            .padding(.bottom, 13)
+            .padding(.bottom, 12)
         }
         .frame(width: width)
         .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -204,9 +213,53 @@ struct MeaningTipView: View {
         .help("点击 🔊 发音（双击词泡可点爆）")
     }
 
-    @ViewBuilder
-    private var speakButton: some View {
+    /// 底部标记按钮行（⌥/⇧ 双击的等价入口，鼠标用户也能用）
+    private var markRow: some View {
+        HStack(spacing: 8) {
+            markChip(title: "不认识", symbol: "questionmark.circle.fill",
+                     tint: accent, state: .unknown)
+            markChip(title: "已掌握", symbol: "star.circle.fill",
+                     tint: AppPalette.accent("#30D158"), state: .mastered)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func markChip(title: String, symbol: String, tint: Color, state: WordMarkState) -> some View {
         Button {
+            onMark(state)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background {
+                Capsule().fill(tint.opacity(hoveredMark == state ? 0.22 : 0.12))
+            }
+            .overlay {
+                Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 0.8)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                hoveredMark = state
+            } else if hoveredMark == state {
+                hoveredMark = nil
+            }
+        }
+        .help(state == .unknown
+              ? "标记为生词：之后会更多出现（快捷键 ⌥ + 双击）"
+              : "标记为已掌握：不再弹出（快捷键 ⇧ + 双击）")
+    }
+
+    @ViewBuilder
+    private var speakButton: some View {        Button {
             speaker.toggle(word: entry.word)
         } label: {
             ZStack {

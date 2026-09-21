@@ -39,6 +39,7 @@ enum SettingsWindowController {
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general
     case library
+    case marks
     case appearance
     case stats
     case about
@@ -49,6 +50,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "通用"
         case .library: return "词库"
+        case .marks: return "标记"
         case .appearance: return "外观"
         case .stats: return "统计"
         case .about: return "关于"
@@ -59,6 +61,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "slider.horizontal.3"
         case .library: return "books.vertical"
+        case .marks: return "tag"
         case .appearance: return "paintpalette"
         case .stats: return "chart.bar.xaxis"
         case .about: return "info.circle"
@@ -67,7 +70,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 }
 
 struct SettingsRootView: View {
-    @State private var page: SettingsPage = .general
+    @State private var page: SettingsPage = SettingsRootView.initialPage
+
+    /// 开发冒烟用：WORDPOP_SETTINGS_PAGE=marks 可直接打开指定页
+    static var initialPage: SettingsPage {
+        guard let raw = ProcessInfo.processInfo.environment["WORDPOP_SETTINGS_PAGE"] else { return .general }
+        return SettingsPage(rawValue: raw) ?? .general
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -80,6 +89,7 @@ struct SettingsRootView: View {
                     switch page {
                     case .general: GeneralPage()
                     case .library: LibraryPage()
+                    case .marks: MarksPage()
                     case .appearance: AppearancePage()
                     case .stats: StatsPage()
                     case .about: AboutPage()

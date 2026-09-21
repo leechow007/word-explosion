@@ -14,6 +14,7 @@ final class AppState: ObservableObject {
         didSet {
             saveSettings()
             engine.hapticsEnabled = settings.hapticsEnabled
+            syncEngineMarkSettings()
             if settings.intervalMinutes != oldValue.intervalMinutes, running {
                 nextWaveAt = Date().addingTimeInterval(settings.intervalSeconds)
             }
@@ -23,10 +24,58 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func syncEngineMarkSettings() {
+        engine.doubleClickMarksKnown = settings.doubleClickMarksKnown
+        engine.modifierMarksEnabled = settings.modifierMarksEnabled
+    }
+
+    // MARK: - 标记与撤销
+
+    private var undoTask: Task<Void, Never>?
+    private var lastMark: (word: String, previous: WordMarkState?)?
+
+    /// 统一的标记入口（记录撤销信息 + 刷新统计）
+    func applyMark(_ word: String, as state: WordMarkState, recordUndo: Bool = true) {
+        let store = WordMarkStore.shared
+        let previous = store.state(for: word)
+        store.mark(word, as: state)
+        statsRevision += 1
+
+        guard recordUndo else { return }
+        lastMark = (word, previous)
+        undoDescription = "「\(word)」已标记为\(state.title)"
+        undoAvailable = true
+        undoTask?.cancel()
+        undoTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.undoAvailable = false
+            self.undoDescription = nil
+        }
+    }
+
+    /// 撤销上一次标记（回到标记前的状态）
+    func undoLastMark() {
+        guard let last = lastMark else { return }
+        if let previous = last.previous {
+            WordMarkStore.shared.mark(last.word, as: previous)
+        } else {
+            WordMarkStore.shared.clearMark(last.word)
+        }
+        lastMark = nil
+        undoAvailable = false
+        undoDescription = nil
+        undoTask?.cancel()
+        statsRevision += 1
+    }
+
     @Published var running = false
     @Published var nextWaveAt: Date?
     @Published var tick = Date()
     @Published var statsRevision = 0
+    /// 撤销上次标记（菜单栏 3 秒内可用）
+    @Published var undoAvailable = false
+    @Published var undoDescription: String?
 
     private var timer: Timer?
     private var pauseRemaining: TimeInterval = 0
@@ -42,11 +91,14 @@ final class AppState: ObservableObject {
             settings = AppSettings()
         }
         engine.hapticsEnabled = settings.hapticsEnabled
+        syncEngineMarkSettings()
 
         engine.onBubblePopped = { [weak self] entry, intent in
             StatsStore.shared.recordPop()
             WordMarkStore.shared.recordPop(entry.word)
-            WordMarkStore.shared.mark(entry.word, as: intent)
+            if let intent {
+                self?.applyMark(entry.word, as: intent, recordUndo: true)
+            }
             self?.statsRevision += 1
         }
         engine.onWordsSpawned = { words in
@@ -175,10 +227,7 @@ final class AppState: ObservableObject {
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self else { return }
-                var demo = self.settings
-                demo.intervalMinutes = 180
-                demo.ttlMinutes = 5
-                self.settings = demo
+                // 注意：只弹一波，不改动（也不持久化）用户设置
                 self.fireNow()
             }
 
@@ -314,15 +363,15 @@ final class AppState: ObservableObject {
         let base: Double
         switch marks.state(for: entry.word) {
         case .some(.unknown):
-            base = 3.0
+            base = settings.unknownWeightMultiplier
         case .some(.known):
-            // 「认识」= 低频复习：7 天内几乎不再出现，之后权重回升到正常水平
-            // （否则在大词库中 0.25 的权重会等价于"永不出现"）
+            // 「认识」= 低频复习：冷却期内权重很低，若干天后回升到正常水平
+            // （否则在大词库中低权重会等价于"永不出现"）
             let record = marks.marks[key]
             let reference = max(record?.lastSeenAt ?? .distantPast,
                                 record?.updatedAt ?? .distantPast)
             let days = Date().timeIntervalSince(reference) / 86_400
-            base = days >= 7 ? 1.0 : 0.25
+            base = days >= Double(max(1, settings.knownReviveDays)) ? 1.0 : settings.knownWeight
         case .some(.mastered):
             base = 0.0
         case .some(.unmarked), .none:
@@ -353,13 +402,15 @@ final class AppState: ObservableObject {
         var remaining = available
         var picked: [WordEntry] = []
 
-        // 生词优先补位：只要还有"未在冷却中"的生词，每波至少带 1 个
-        let unknownCandidates = remaining.filter {
-            marks.state(for: $0.word) == .unknown && !cooled.contains($0.word.lowercased())
-        }
-        if let firstUnknown = unknownCandidates.randomElement() {
-            picked.append(firstUnknown)
-            remaining.removeAll { $0.id == firstUnknown.id }
+        // 生词优先补位：只要还有"未在冷却中"的生词，每波至少带 1 个（可在设置关闭）
+        if settings.prioritizeUnknown {
+            let unknownCandidates = remaining.filter {
+                marks.state(for: $0.word) == .unknown && !cooled.contains($0.word.lowercased())
+            }
+            if let firstUnknown = unknownCandidates.randomElement() {
+                picked.append(firstUnknown)
+                remaining.removeAll { $0.id == firstUnknown.id }
+            }
         }
 
         // 其余按权重抽样（不放回）
@@ -434,6 +485,14 @@ final class AppState: ObservableObject {
         marks.mark(wKnown, as: .known)
 
         log("[MarkTest] 词源=\(settings.source.title)，共 \(pool.count) 词")
+        log(String(format: "[MarkTest] 设置：间隔 %d 分钟 / 双击=认识:%@ / 修饰键:%@ / 生词倍数 %.1f / 认识权重 %.2f / 回升 %d 天 / 优先补位:%@",
+                   settings.intervalMinutes,
+                   settings.doubleClickMarksKnown ? "开" : "关",
+                   settings.modifierMarksEnabled ? "开" : "关",
+                   settings.unknownWeightMultiplier,
+                   settings.knownWeight,
+                   settings.knownReviveDays,
+                   settings.prioritizeUnknown ? "开" : "关"))
         log("[MarkTest] 标记：\(wUnknown)=生词 / \(wKnown)=认识 / \(wMastered)=已掌握 / \(wUnmarked)=未标记")
 
         let none = Set<String>()
