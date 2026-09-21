@@ -81,7 +81,7 @@ final class MeaningTipController {
                 options: [.usesLineFragmentOrigin],
                 attributes: [.font: meaningFont]
             )
-            textH = max(20, min(rect.height, 62))   // 最多约 3 行
+            textH = max(20, min(rect.height, 94))   // 最多约 5 行，兼顾长释义（如雅思词条）
         }
         let height = ceil(16 + wordH + 8 + textH + 14)
         return CGSize(width: width, height: height)
@@ -128,6 +128,7 @@ struct MeaningTipView: View {
                     .font(.system(size: 13.5, weight: .medium))
                     .foregroundStyle(AppPalette.ink.opacity(0.72))
                     .lineSpacing(2.5)
+                    .lineLimit(5)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }

@@ -9,3 +9,6 @@ dist/
 
 # macOS
 .DS_Store
+
+# 本地导入的第三方词库（版权归原出处，不公开）
+imports/

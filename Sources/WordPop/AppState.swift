@@ -58,10 +58,97 @@ final class AppState: ObservableObject {
     func applicationDidFinishLaunching() {
         guard !didFinishLaunch else { return }
         didFinishLaunch = true
+
+        // 自动导入模式：环境变量 WORDPOP_IMPORT 或应用目录下的 wordpop-import.txt
+        if performAutoImportIfNeeded() {
+            return
+        }
+
         if settings.autoStartOnLaunch {
             start()
         }
         beginSmokeTestIfRequested()
+    }
+
+    /// 启动时自动导入词本（一次性）。
+    /// 检测顺序：环境变量 WORDPOP_IMPORT → 应用包同级目录的 wordpop-import.txt/.csv。
+    /// 导入结果写入同级 wordpop-import.log，便于脚本化验证。
+    @discardableResult
+    private func performAutoImportIfNeeded() -> Bool {
+        let env = ProcessInfo.processInfo.environment
+        let bundleDir = Bundle.main.bundleURL.deletingLastPathComponent()
+
+        var importURL: URL?
+        var exitAfterImport = false
+
+        if let path = env["WORDPOP_IMPORT"], !path.isEmpty {
+            importURL = URL(fileURLWithPath: path)
+            exitAfterImport = env["WORDPOP_IMPORT_EXIT"] == "1"
+        } else {
+            for name in ["wordpop-import.txt", "wordpop-import.csv"] {
+                let candidate = bundleDir.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    importURL = candidate
+                    break
+                }
+            }
+            exitAfterImport = env["WORDPOP_IMPORT_EXIT"] == "1"
+        }
+
+        guard let url = importURL else { return false }
+
+        var report: [String] = []
+        func log(_ text: String) {
+            report.append(text)
+            FileHandle.standardError.write(Data((text + "\n").utf8))
+        }
+
+        log("[WordPop] 开始导入: \(url.path)")
+        let result = WordImportParser.parse(url: url)
+
+        var merged = WordBankStore.shared.imported
+        var seen = Set(merged.map { $0.word.lowercased() })
+        var added = 0
+        var duplicate = 0
+        for entry in result.entries {
+            if seen.insert(entry.word.lowercased()).inserted {
+                merged.append(entry)
+                added += 1
+            } else {
+                duplicate += 1
+            }
+        }
+        WordBankStore.shared.replaceImported(with: merged)
+
+        var updated = settings
+        updated.source = .imported
+        settings = updated
+
+        log("[WordPop] 解析 \(result.entries.count) 条，新增 \(added) 条，重复 \(duplicate) 条，无效行 \(result.skipped)")
+        log("[WordPop] 我的词本当前 \(WordBankStore.shared.imported.count) 条；词源已切换为「我的词本」")
+        let savedOK = FileManager.default.fileExists(
+            atPath: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("WordPop/bank.json").path
+        )
+        log("[WordPop] 词库落盘: \(savedOK ? "成功" : "失败（见上方错误）")")
+        log("[WordPop] 完成时间: \(Date())")
+
+        // 写报告到导入文件同级目录
+        let reportURL = url.deletingLastPathComponent().appendingPathComponent("wordpop-import.log")
+        try? report.joined(separator: "\n").write(to: reportURL, atomically: true, encoding: .utf8)
+
+        // 一次性使用：导入后删除源文件（避免每次启动重复导入；重复条目本身也会被去重）
+        try? FileManager.default.removeItem(at: url)
+
+        if exitAfterImport {
+            Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                NSApp.terminate(nil)
+            }
+        } else if settings.autoStartOnLaunch {
+            start()
+        }
+        return true
     }
 
     /// 冒烟测试：WORDPOP_SMOKE=1 时 1 秒后立即弹一波（不依赖计时器）

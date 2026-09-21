@@ -218,8 +218,19 @@ final class WordBankStore: ObservableObject {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(imported) {
-            try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(imported)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            // 不再静默失败：输出错误并写一份兜底文件，便于排查与恢复
+            let message = "[WordPop] 词库保存失败: \(error.localizedDescription)\n"
+            FileHandle.standardError.write(Data(message.utf8))
+            let fallback = FileManager.default.temporaryDirectory
+                .appendingPathComponent("WordPop-bank-fallback.json")
+            if let data = try? JSONEncoder().encode(imported) {
+                try? data.write(to: fallback, options: .atomic)
+                FileHandle.standardError.write(Data("[WordPop] 已写入兜底文件: \(fallback.path)\n".utf8))
+            }
         }
     }
 }
