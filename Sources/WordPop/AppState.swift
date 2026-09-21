@@ -43,9 +43,14 @@ final class AppState: ObservableObject {
         }
         engine.hapticsEnabled = settings.hapticsEnabled
 
-        engine.onBubblePopped = { [weak self] _ in
+        engine.onBubblePopped = { [weak self] entry, intent in
             StatsStore.shared.recordPop()
+            WordMarkStore.shared.recordPop(entry.word)
+            WordMarkStore.shared.mark(entry.word, as: intent)
             self?.statsRevision += 1
+        }
+        engine.onWordsSpawned = { words in
+            WordMarkStore.shared.recordSeen(words)
         }
         engine.onWaveStarted = { [weak self] _ in
             StatsStore.shared.recordWave()
@@ -58,6 +63,12 @@ final class AppState: ObservableObject {
     func applicationDidFinishLaunching() {
         guard !didFinishLaunch else { return }
         didFinishLaunch = true
+
+        // 开发自测：标记 → 加权选词闭环（环境变量或触发文件）
+        if runMarkSelfTestIfRequested() || runMarkSelfTestFromTriggerFile() {
+            NSApp.terminate(nil)
+            return
+        }
 
         // 开发预览：离屏渲染词泡视觉后退出
         if DevPreview.runIfRequested() {
@@ -273,17 +284,12 @@ final class AppState: ObservableObject {
     }
 
     private func fireWave() {
-        let sourcePool = WordPool.entries(for: settings.source)
-        guard !sourcePool.isEmpty else {
+        let wave = pickWaveWords(count: settings.wordsPerWave)
+        guard !wave.isEmpty else {
+            // 词库为空，或所有词都已被标记为「已掌握」
             engine.clearAll(quick: true)
             return
         }
-
-        var candidates = sourcePool.filter { !engine.shouldExclude($0.word) }
-        if candidates.isEmpty { candidates = sourcePool }
-
-        let count = min(settings.wordsPerWave, candidates.count)
-        let wave = Array(candidates.shuffled().prefix(count))
 
         let appearance = BubbleAppearance.from(settings: settings)
         engine.launchWave(
@@ -295,10 +301,186 @@ final class AppState: ObservableObject {
         )
     }
 
+    // MARK: - 加权选词（标记体系的核心）
+
+    /// 最近 2 波出现过的词（用于冷却降权）
+    private var recentWaves: [[String]] = []
+
+    /// 单词的选词权重（可单测）
+    /// 生词 3.0 / 未标记 1.0 / 认识 0.25（7 天后回升到 1.0）/ 已掌握 0
+    func pickWeight(for entry: WordEntry, cooled: Set<String>) -> Double {
+        let key = entry.word.lowercased()
+        let marks = WordMarkStore.shared
+        let base: Double
+        switch marks.state(for: entry.word) {
+        case .some(.unknown):
+            base = 3.0
+        case .some(.known):
+            // 「认识」= 低频复习：7 天内几乎不再出现，之后权重回升到正常水平
+            // （否则在大词库中 0.25 的权重会等价于"永不出现"）
+            let record = marks.marks[key]
+            let reference = max(record?.lastSeenAt ?? .distantPast,
+                                record?.updatedAt ?? .distantPast)
+            let days = Date().timeIntervalSince(reference) / 86_400
+            base = days >= 7 ? 1.0 : 0.25
+        case .some(.mastered):
+            base = 0.0
+        case .some(.unmarked), .none:
+            base = 1.0
+        }
+        var w = base
+        if cooled.contains(key) { w *= 0.2 }
+        if engine.shouldExclude(entry.word) { w *= 0.5 }
+        return w
+    }
+
+    /// 权重：生词 3.0 / 未标记 1.0 / 认识 0.25 / 已掌握排除；再叠加冷却与"最近点爆"降权
+    func pickWaveWords(count: Int) -> [WordEntry] {
+        let pool = WordPool.entries(for: settings.source)
+        guard !pool.isEmpty else { return [] }
+
+        let marks = WordMarkStore.shared
+        let available = pool.filter { marks.state(for: $0.word) != .mastered }
+        guard !available.isEmpty else { return [] }
+
+        let cooled = Set(recentWaves.flatMap { $0 })
+        let target = min(count, available.count)
+
+        func weight(_ entry: WordEntry) -> Double {
+            pickWeight(for: entry, cooled: cooled)
+        }
+
+        var remaining = available
+        var picked: [WordEntry] = []
+
+        // 生词优先补位：只要还有"未在冷却中"的生词，每波至少带 1 个
+        let unknownCandidates = remaining.filter {
+            marks.state(for: $0.word) == .unknown && !cooled.contains($0.word.lowercased())
+        }
+        if let firstUnknown = unknownCandidates.randomElement() {
+            picked.append(firstUnknown)
+            remaining.removeAll { $0.id == firstUnknown.id }
+        }
+
+        // 其余按权重抽样（不放回）
+        while picked.count < target, !remaining.isEmpty {
+            let total = remaining.reduce(0.0) { $0 + weight($1) }
+            var r = Double.random(in: 0 ..< max(total, 0.0001))
+            var chosen = remaining[remaining.count - 1]
+            for entry in remaining {
+                r -= weight(entry)
+                if r <= 0 {
+                    chosen = entry
+                    break
+                }
+            }
+            picked.append(chosen)
+            remaining.removeAll { $0.id == chosen.id }
+        }
+
+        recentWaves.append(picked.map { $0.word.lowercased() })
+        if recentWaves.count > 2 { recentWaves.removeFirst(recentWaves.count - 2) }
+
+        return picked.shuffled()
+    }
+
     // MARK: 词库变化
 
     func wordSourceChanged() {
         engine.clearAll(quick: true)
+    }
+
+    // MARK: 开发自测：验证"标记 → 加权选词"闭环（WORDPOP_MARK_TEST=1）
+
+    func runMarkSelfTestIfRequested() -> Bool {
+        guard ProcessInfo.processInfo.environment["WORDPOP_MARK_TEST"] == "1" else { return false }
+        runMarkSelfTest(reportURL: nil)
+        return true
+    }
+
+    /// 触发文件版本（用于 `open` 启动的非沙箱路径）：dist/wordpop-marktest.txt
+    func runMarkSelfTestFromTriggerFile() -> Bool {
+        let dir = Bundle.main.bundleURL.deletingLastPathComponent()
+        let trigger = dir.appendingPathComponent("wordpop-marktest.txt")
+        guard FileManager.default.fileExists(atPath: trigger.path) else { return false }
+        try? FileManager.default.removeItem(at: trigger)
+        runMarkSelfTest(reportURL: dir.appendingPathComponent("wordpop-marktest.log"))
+        return true
+    }
+
+    private func runMarkSelfTest(reportURL: URL?) {
+        var lines: [String] = []
+        func log(_ text: String) {
+            lines.append(text)
+            FileHandle.standardError.write(Data((text + "\n").utf8))
+        }
+
+        let pool = WordPool.entries(for: settings.source)
+        guard pool.count >= 4 else {
+            log("[MarkTest] 词库太小，跳过")
+            if let reportURL {
+                try? lines.joined(separator: "\n").write(to: reportURL, atomically: true, encoding: .utf8)
+            }
+            return
+        }
+
+        let marks = WordMarkStore.shared
+        let wUnmarked = pool[3].word
+        let wUnknown = pool[0].word
+        let wMastered = pool[1].word
+        let wKnown = pool[2].word
+        marks.mark(wUnknown, as: .unknown)
+        marks.mark(wMastered, as: .mastered)
+        marks.mark(wKnown, as: .known)
+
+        log("[MarkTest] 词源=\(settings.source.title)，共 \(pool.count) 词")
+        log("[MarkTest] 标记：\(wUnknown)=生词 / \(wKnown)=认识 / \(wMastered)=已掌握 / \(wUnmarked)=未标记")
+
+        let none = Set<String>()
+        func w(_ word: String) -> Double {
+            guard let entry = pool.first(where: { $0.word == word }) else { return -1 }
+            return pickWeight(for: entry, cooled: none)
+        }
+        log(String(format: "[MarkTest] 权重校验：未标记 %.2f（期望 1.00）/ 生词 %.2f（期望 3.00）/ 认识 %.2f（期望 0.25）/ 已掌握 %.2f（期望 0.00）",
+                   w(wUnmarked), w(wUnknown), w(wKnown), w(wMastered)))
+
+        let cooledSet = Set([wUnknown.lowercased()])
+        if let entry = pool.first(where: { $0.word == wUnknown }) {
+            log(String(format: "[MarkTest] 冷却校验：生词进入最近 2 波后权重 %.2f（期望 0.60）",
+                       pickWeight(for: entry, cooled: cooledSet)))
+        }
+
+        marks.debugBackdate(wKnown, days: 8)
+        log(String(format: "[MarkTest] 7 天回升校验：认识词回拨 8 天后权重 %.2f（期望 1.00）", w(wKnown)))
+
+        // 抽样验证：已掌握的词绝不出现在任何一波
+        var masteredHits = 0
+        var unknownHits = 0
+        var totalPicks = 0
+        for _ in 0 ..< 200 {
+            for entry in pickWaveWords(count: 5) {
+                totalPicks += 1
+                let lower = entry.word.lowercased()
+                if lower == wMastered.lowercased() { masteredHits += 1 }
+                if lower == wUnknown.lowercased() { unknownHits += 1 }
+            }
+        }
+        log("[MarkTest] 抽样 200 波 / \(totalPicks) 次选词：生词出现 \(unknownHits) 次，已掌握出现 \(masteredHits) 次（必须为 0）")
+
+        marks.clearMark(wUnknown)
+        marks.clearMark(wKnown)
+        marks.clearMark(wMastered)
+
+        // 落盘回读校验：证明 marks.json 真的写成功并能读回
+        marks.mark(wUnknown, as: .unknown)
+        marks.debugReload()
+        let persisted = marks.state(for: wUnknown) == .unknown
+        log("[MarkTest] 落盘回读校验：\(persisted ? "通过 ✅" : "失败 ❌")（marks.json = \(marks.storagePath)）")
+        marks.clearMark(wUnknown)
+
+        if let reportURL {
+            try? lines.joined(separator: "\n").write(to: reportURL, atomically: true, encoding: .utf8)
+        }
     }
 
     func clearAllBubbles() {

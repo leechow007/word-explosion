@@ -5,6 +5,7 @@ import AppKit
 
 struct MenuBarRootView: View {
     @EnvironmentObject private var app: AppState
+    @ObservedObject private var markStore = WordMarkStore.shared
 
     var body: some View {
         // 状态头
@@ -36,6 +37,22 @@ struct MenuBarRootView: View {
         Text("今日已点掉 \(StatsStore.shared.todayCount) 个单词 · 累计 \(StatsStore.shared.totalPopped)")
             .font(.system(size: 11.5))
             .foregroundStyle(.secondary)
+
+        if markStore.count(of: .unknown) > 0 || markStore.count(of: .mastered) > 0 {
+            Text("生词 \(markStore.count(of: .unknown)) 个 · 已掌握 \(markStore.count(of: .mastered)) 个")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+
+            if markStore.count(of: .mastered) > 0 {
+                Button {
+                    let n = markStore.restoreAllMastered()
+                    app.statsRevision += 1
+                    print("[WordPop] 已恢复 \(n) 个「已掌握」的词")
+                } label: {
+                    Label("恢复全部已掌握的词", systemImage: "arrow.uturn.backward")
+                }
+            }
+        }
 
         Divider()
 

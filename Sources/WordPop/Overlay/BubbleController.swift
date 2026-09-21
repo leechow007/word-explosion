@@ -44,6 +44,8 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
     private let showsGlow = ProcessInfo.processInfo.environment["WORDPOP_NO_GLOW"] != "1"
     private var ttlTask: Task<Void, Never>?
     private var popped = false
+    private var clickMonitor: Any?
+    private var lastClickModifiers: NSEvent.ModifierFlags = []
 
     init(entry: WordEntry, appearance: BubbleAppearance, windowFrame: CGRect) {
         self.entry = entry
@@ -109,6 +111,14 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
         glowPanel.contentView = glowHosting
 
         glowPanel.alphaValue = 1   // 不使用窗口 alpha 动画（透明窗口做 alpha 动画会整块矩形显影）
+
+        // 精确捕获鼠标按下时的修饰键（⌥ = 生词，⇧ = 已掌握）
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            if let self, event.window === self.window {
+                self.lastClickModifiers = event.modifierFlags
+            }
+            return event
+        }
     }
 
     func orderFront() {
@@ -165,9 +175,19 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
     // MARK: 双击点爆
 
+    /// 本次点爆的标记意图：⌥ = 生词，⇧ = 已掌握，无修饰键 = 认识
+    var currentIntent: WordMarkState {
+        var flags = lastClickModifiers
+        if flags.isEmpty { flags = NSEvent.modifierFlags }   // 兜底：读当前修饰键
+        if flags.contains(.shift) { return .mastered }
+        if flags.contains(.option) { return .unknown }
+        return .known
+    }
+
     func pop() {
         guard !popped, phase == .idle || phase == .entering else { return }
         popped = true
+        let intent = currentIntent
         ttlTask?.cancel()
         engine?.scheduleMeaningTip(for: self, show: false)
         phase = .bursting
@@ -190,7 +210,7 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
             guard let self else { return }
             self.window.orderOut(nil)
             self.glowWindow.orderOut(nil)
-            self.engine?.remove(self, counted: true)
+            self.engine?.remove(self, counted: true, intent: intent)
         }
     }
 
@@ -272,6 +292,7 @@ final class BubbleController: NSObject, ObservableObject, Identifiable {
 
     deinit {
         ttlTask?.cancel()
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
     }
 }
 
