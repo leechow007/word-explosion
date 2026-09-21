@@ -98,8 +98,16 @@ struct MeaningTipView: View {
 
     var body: some View {
         ZStack {
+            // 同样避免 .ultraThinMaterial 的矩形底噪，使用自适应半透明底 + 渐变高光
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.94))
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(
+                    LinearGradient(stops: [
+                        .init(color: .white.opacity(0.22), location: 0.00),
+                        .init(color: .clear, location: 0.55)
+                    ], startPoint: .top, endPoint: .bottom)
+                )
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .strokeBorder(
                     LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.25)],

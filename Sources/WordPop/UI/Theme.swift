@@ -109,9 +109,17 @@ enum WordMetrics {
                       height: ceil(textSize.height) + padV * 2)
     }
 
+    /// 词泡窗口相对胶囊的留白（只容纳自身很轻的投影，不再放发光）
+    static func bubbleMargin(fontSize: CGFloat) -> CGFloat {
+        ceil(max(12, fontSize * 0.6))
+    }
+
+    /// 发光窗口相对胶囊的余量（必须 ≥ 最大模糊半径 × 2，否则会被裁切出硬边）
+    static let glowMargin: CGFloat = 104
+
     /// 词泡窗口尺寸 = 胶囊 + 阴影/浮动余量（视觉绘制空间）
     static func windowSize(capsule: CGSize, fontSize: CGFloat) -> CGSize {
-        let margin = ceil(max(10, fontSize * 0.55))
+        let margin = bubbleMargin(fontSize: fontSize)
         return CGSize(width: capsule.width + margin * 2,
                       height: capsule.height + margin * 2)
     }

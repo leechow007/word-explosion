@@ -492,7 +492,12 @@ struct ThemeCard: View {
         switch theme {
         case .glassLight:
             capsule(over: AnyView(
-                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(
+                    LinearGradient(stops: [
+                        .init(color: .white.opacity(0.72), location: 0.00),
+                        .init(color: .white.opacity(0.58), location: 1.00)
+                    ], startPoint: .top, endPoint: .bottom)
+                )
             ), textColor: AppPalette.ink, accent: AppPalette.accent(accentHex))
         case .glassDark:
             capsule(over: AnyView(
@@ -536,7 +541,12 @@ struct LiveBubblePreview: View {
                 ZStack {
                     switch appearance.theme {
                     case .glassLight:
-                        Capsule().fill(.ultraThinMaterial)
+                        Capsule().fill(
+                            LinearGradient(stops: [
+                                .init(color: .white.opacity(0.72), location: 0.00),
+                                .init(color: .white.opacity(0.55), location: 1.00)
+                            ], startPoint: .top, endPoint: .bottom)
+                        )
                     case .glassDark:
                         Capsule().fill(LinearGradient(colors: [.black.opacity(0.48), .black.opacity(0.32)],
                                                       startPoint: .top, endPoint: .bottom))

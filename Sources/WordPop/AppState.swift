@@ -59,6 +59,11 @@ final class AppState: ObservableObject {
         guard !didFinishLaunch else { return }
         didFinishLaunch = true
 
+        // 开发预览：离屏渲染词泡视觉后退出
+        if DevPreview.runIfRequested() {
+            return
+        }
+
         // 自动导入模式：环境变量 WORDPOP_IMPORT 或应用目录下的 wordpop-import.txt
         if performAutoImportIfNeeded() {
             return
